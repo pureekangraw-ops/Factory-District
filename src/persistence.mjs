@@ -7,7 +7,7 @@ export const PERSISTENCE_METHODS = Object.freeze([
   'recordFailure',
   'recordCancellation',
   'appendEvidence',
-  'recordVersionGate',
+  'recordVerification',
   'recordReturn',
   'listAttempts',
   'listEvents',

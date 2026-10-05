@@ -10,10 +10,8 @@ export const CODE_STEP = Object.freeze({
   BUILD: 'BUILD',
   INSPECT_ARTIFACT: 'INSPECT_ARTIFACT',
   CI_CHECKPOINT: 'CI_CHECKPOINT',
-  GATE: 'GATE',
   DEPLOY: 'DEPLOY',
   RUNTIME_VERIFY: 'RUNTIME_VERIFY',
-  VERSION_GATE: 'VERSION_GATE',
   RETURN: 'RETURN',
 });
 
@@ -27,7 +25,6 @@ export const CODE_ADAPTER_METHODS = Object.freeze([
   'build',
   'inspectArtifact',
   'ciCheckpoint',
-  'gate',
   'deploy',
   'verifyRuntime',
 ]);

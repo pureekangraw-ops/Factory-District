@@ -9,7 +9,7 @@ export function createInMemoryPersistence({ failOn = null } = {}) {
   const failures = new Map();
   const cancellations = new Map();
   const evidence = new Map();
-  const gates = new Map();
+  const verifications = new Map();
   const returns = new Map();
   const events = new Map();
   function maybeFail(method) { if (failOn === method) throw Object.assign(new Error(`${method}_FAILED`), { code: 'PERSISTENCE_ERROR' }); }
@@ -49,7 +49,7 @@ export function createInMemoryPersistence({ failOn = null } = {}) {
     async recordFailure(value) { maybeFail('recordFailure'); failures.set(value.failureId, copy(value)); return copy(value); },
     async recordCancellation(value) { maybeFail('recordCancellation'); cancellations.set(value.cancellationId, { ...(cancellations.get(value.cancellationId) || {}), ...copy(value) }); return copy(cancellations.get(value.cancellationId)); },
     async appendEvidence(value) { maybeFail('appendEvidence'); evidence.set(value.evidenceId, copy(value)); return copy(value); },
-    async recordVersionGate(value) { maybeFail('recordVersionGate'); gates.set(value.versionGateId, copy(value)); return copy(value); },
+    async recordVerification(value) { maybeFail('recordVerification'); verifications.set(value.verificationId, copy(value)); return copy(value); },
     async recordReturn(value) { maybeFail('recordReturn'); const current = runs.get(value.runId); if (!current || current.sequence !== value.expectedSequence) throw new Error('PERSISTENCE_CONFLICT'); assertReturnTransition(current.returnState, value.state); returns.set(value.returnId, copy(value)); const next = copy(current); next.returnState = value.state; next.returnRef = value.returnId; next.sequence += 1; next.updatedAt = value.returnedAt; runs.set(value.runId, next); event(value.runId, { eventId: value.returnId, axis: 'return', toState: value.state, sequence: next.sequence }); return { returnRecord: copy(value), run: copy(next) }; },
     async listAttempts(runId) { return [...attempts.values()].filter((item) => item.runId === runId).sort((a, b) => a.ordinal - b.ordinal).map(copy); },
     async listEvents(runId) { return copy(events.get(runId) || []); },

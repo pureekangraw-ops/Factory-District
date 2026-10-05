@@ -24,8 +24,8 @@ function evidenceFor(step, result) {
 
 function requireStep(result, step) {
   if (!result || ![CODE_STATUS.PASS, CODE_STATUS.READY, 'SUCCESS', 'VERIFIED', 'ACCEPTED'].includes(result.status)) {
-    const failureClass = step === CODE_STEP.GATE ? FAILURE_CLASS.VERSION_MISMATCH : step === CODE_STEP.RUNTIME_VERIFY ? FAILURE_CLASS.VERIFICATION_FAILED : FAILURE_CLASS.EXECUTION_ERROR;
-    throw new CodeMachineError(`${step}_NOT_PASSED`, failureClass, step === CODE_STEP.GATE ? 'BLOCKED' : null);
+    const failureClass = step === CODE_STEP.RUNTIME_VERIFY || step === CODE_STEP.CI_CHECKPOINT ? FAILURE_CLASS.VERIFICATION_FAILED : FAILURE_CLASS.EXECUTION_ERROR;
+    throw new CodeMachineError(`${step}_NOT_PASSED`, failureClass);
   }
   return result;
 }
@@ -59,7 +59,6 @@ export async function runCodeMachine({ kernel, adapter, work, actorRef = 'PIXIE'
       [CODE_STEP.BUILD]: 'build',
       [CODE_STEP.INSPECT_ARTIFACT]: 'inspectArtifact',
       [CODE_STEP.CI_CHECKPOINT]: 'ciCheckpoint',
-      [CODE_STEP.GATE]: 'gate',
       [CODE_STEP.DEPLOY]: 'deploy',
       [CODE_STEP.RUNTIME_VERIFY]: 'verifyRuntime',
     }[step];
@@ -98,14 +97,13 @@ export async function runCodeMachine({ kernel, adapter, work, actorRef = 'PIXIE'
     const artifact = await call(CODE_STEP.INSPECT_ARTIFACT, { work, run, repository, build });
     checkSha(artifact, repository.sourceSha, CODE_STEP.INSPECT_ARTIFACT);
     const ci = await call(CODE_STEP.CI_CHECKPOINT, { work, run, repository, tests, build, artifact });
-    const gate = await call(CODE_STEP.GATE, { work, run, repository, tests, build, artifact, ci });
-    const deployment = await call(CODE_STEP.DEPLOY, { work, run, repository, artifact, gate });
+    const deployment = await call(CODE_STEP.DEPLOY, { work, run, repository, artifact, ci });
     checkSha(deployment, repository.sourceSha, CODE_STEP.DEPLOY);
     const runtime = await call(CODE_STEP.RUNTIME_VERIFY, { work, run, repository, deployment });
     const runtimeMatches = runtime.runtimeSha === repository.sourceSha;
-    evidence.push({ kind: 'CODE_VERSION_GATE', verificationScope: 'VERSION', source: { systemId: 'CODE_MACHINE', surfaceId: CODE_STEP.VERSION_GATE }, contentRef: runtime.evidenceRef || `version://${repository.sourceSha}`, metadata: { sourceSha: repository.sourceSha, runtimeSha: runtime.runtimeSha, matches: runtimeMatches } });
+    evidence.push({ kind: 'CODE_RUNTIME_VERIFICATION', verificationScope: 'RUNTIME', source: { systemId: 'CODE_MACHINE', surfaceId: CODE_STEP.RUNTIME_VERIFY }, contentRef: runtime.evidenceRef || runtime.runtimeRef || deployment.deploymentRef, metadata: { sourceSha: repository.sourceSha, runtimeSha: runtime.runtimeSha, matches: runtimeMatches } });
     run = await kernel.beginVerification(run.runId, { actorRef });
-    run = await kernel.verify(run.runId, { evidence, versionGate: { status: runtimeMatches ? 'PASS' : 'UNKNOWN', observed: { sourceSha: repository.sourceSha, runtimeSha: runtime.runtimeSha }, reason: runtimeMatches ? 'SOURCE_RUNTIME_MATCH' : 'SOURCE_RUNTIME_MISMATCH' }, actorRef });
+    run = await kernel.verify(run.runId, { evidence, verification: { status: runtimeMatches ? 'PASS' : 'UNKNOWN', observed: { sourceSha: repository.sourceSha, runtimeSha: runtime.runtimeSha }, reason: runtimeMatches ? 'SOURCE_RUNTIME_MATCH' : 'SOURCE_RUNTIME_MISMATCH' }, actorRef });
     if (run.executionState === EXECUTION_STATE.COMPLETE) run = await kernel.returnRun(run.runId, { resultRefs: [artifact.artifactRef, deployment.deploymentRef], evidenceRefs: evidence.map((item) => item.contentRef), boundaryStatus: 'HANDOFF_VERIFIED', nextAction: 'CODE_OWNER_READBACK_COMPLETE' });
     else if (run.executionState === EXECUTION_STATE.UNKNOWN) run = await kernel.returnRun(run.runId, { resultRefs: [], evidenceRefs: evidence.map((item) => item.contentRef), boundaryStatus: 'HANDOFF_VERIFIED', nextAction: 'CODE_RUNTIME_RECONCILIATION_REQUIRED' });
     return { run, steps, evidence, repository, artifact, deployment, runtime };

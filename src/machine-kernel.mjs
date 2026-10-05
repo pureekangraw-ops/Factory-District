@@ -102,18 +102,18 @@ export function createMachineKernel({ persistence, clock = () => new Date().toIS
     return advanceExecution(run, EXECUTION_STATE.VERIFYING, { checkpointId: CHECKPOINT.VERIFY }, actorRef);
   }
 
-  async function verify(runId, { evidence = [], versionGate, actorRef = 'machine-kernel' } = {}) {
+  async function verify(runId, { evidence = [], verification, actorRef = 'machine-kernel' } = {}) {
     const run = await load(runId);
     if (run.executionState !== EXECUTION_STATE.VERIFYING) throw new Error('VERIFY_REQUIRES_VERIFYING');
-    if (!versionGate || typeof versionGate !== 'object') throw new TypeError('versionGate_REQUIRED');
+    if (!verification || typeof verification !== 'object') throw new TypeError('verification_REQUIRED');
     const evidenceRefs = [];
     for (const item of evidence) {
       const saved = await store.appendEvidence({ ...item, evidenceId: item.evidenceId || id(idFactory, 'evidence'), runId, attemptId: run.attemptId, capturedAt: item.capturedAt || clock() });
       evidenceRefs.push(saved.evidenceId);
     }
-    const gate = await store.recordVersionGate({ ...versionGate, versionGateId: versionGate.versionGateId || id(idFactory, 'gate'), runId, decidedAt: versionGate.decidedAt || clock() });
-    if (gate.status === 'PASS' && evidenceRefs.length > 0) return advanceExecution(run, EXECUTION_STATE.COMPLETE, { checkpointId: CHECKPOINT.VERIFY, evidenceRefs, versionGateRef: gate.versionGateId }, actorRef);
-    return recordFailure(run, { class: gate.status === 'FAIL' ? FAILURE_CLASS.VERSION_MISMATCH : FAILURE_CLASS.VERIFICATION_FAILED, code: gate.status === 'FAIL' ? 'VERSION_GATE_FAILED' : 'VERIFICATION_EVIDENCE_INCOMPLETE', message: gate.reason || 'Verification did not produce a complete proof', retryable: false, safeToRetry: false, requiresManual: gate.status === 'FAIL', confidence: gate.status === 'UNKNOWN' ? 'UNKNOWN' : 'CONFIRMED' }, actorRef, gate.status === 'FAIL' ? EXECUTION_STATE.BLOCKED : EXECUTION_STATE.UNKNOWN);
+    const record = await store.recordVerification({ ...verification, verificationId: verification.verificationId || id(idFactory, 'verification'), runId, observedAt: verification.observedAt || clock() });
+    if (record.status === 'PASS' && evidenceRefs.length > 0) return advanceExecution(run, EXECUTION_STATE.COMPLETE, { checkpointId: CHECKPOINT.VERIFY, evidenceRefs, verificationRef: record.verificationId }, actorRef);
+    return recordFailure(run, { class: record.status === 'FAIL' ? FAILURE_CLASS.VERSION_MISMATCH : FAILURE_CLASS.VERIFICATION_FAILED, code: record.status === 'FAIL' ? 'VERIFICATION_FAILED' : 'VERIFICATION_EVIDENCE_INCOMPLETE', message: record.reason || 'Verification did not produce a complete proof', retryable: false, safeToRetry: false, requiresManual: false, confidence: record.status === 'UNKNOWN' ? 'UNKNOWN' : 'CONFIRMED' }, actorRef, record.status === 'FAIL' ? EXECUTION_STATE.BLOCKED : EXECUTION_STATE.UNKNOWN);
   }
 
   async function recordFailure(run, failureInput, actorRef = 'machine-kernel', targetState = null) {

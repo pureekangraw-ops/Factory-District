@@ -9,7 +9,7 @@ export function createFactoryStationReceiver({ pixie, store, clock = () => new D
   return Object.freeze({
     async dispatch({ envelope }) {
       const result = await pixie.run({ work: envelope.work, domain: envelope.domain, machineId: envelope.machineId, authorityRef: envelope.authorityRef });
-      const receiptId = `factory-receipt-${requiredString(envelope.oathId, 'envelope.oathId')}`;
+      const receiptId = `factory-receipt-${requiredString(envelope.work?.workId, 'envelope.work.workId')}-${clock()}`;
       const record = { receiptId, workId: envelope.work?.workId || null, pixieStatus: result.status, lifecycleStatus: result.lifecycleStatus, result, observedAt: clock() };
       await durable.put(`factory/e2e/${receiptId}`, record, { expectedVersion: 0 });
       await durable.append('factory/e2e-events', { receiptId, workId: record.workId, pixieStatus: result.status, observedAt: record.observedAt });

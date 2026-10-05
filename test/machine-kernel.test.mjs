@@ -40,7 +40,7 @@ test('kernel runs through verification to COMPLETE without claiming subject matu
   await kernel.beginVerification('RUN-1');
   const complete = await kernel.verify('RUN-1', {
     evidence: [{ kind: 'TEST', verificationScope: 'EXECUTION', source: { systemId: 'GITHUB' }, contentRef: 'evidence://test-1' }],
-    versionGate: { status: 'PASS', observed: { sourceSha: 'sha-1' } },
+    verification: { status: 'PASS', observed: { sourceSha: 'sha-1' } },
   });
   assert.equal(complete.executionState, EXECUTION_STATE.COMPLETE);
   assert.equal(complete.returnState, RETURN_STATE.PENDING);
@@ -51,7 +51,7 @@ test('return failure does not undo execution completion and can be retried', asy
   const kernel = makeKernel();
   await activeRun(kernel);
   await kernel.beginVerification('RUN-1');
-  await kernel.verify('RUN-1', { evidence: [{ kind: 'RUNTIME', verificationScope: 'RUNTIME', source: { systemId: 'OWNER' }, contentRef: 'evidence://runtime-1' }], versionGate: { status: 'PASS' } });
+  await kernel.verify('RUN-1', { evidence: [{ kind: 'RUNTIME', verificationScope: 'RUNTIME', source: { systemId: 'OWNER' }, contentRef: 'evidence://runtime-1' }], verification: { status: 'PASS' } });
   const failed = await kernel.failReturn('RUN-1', { reason: 'RAIL_UNAVAILABLE' });
   assert.equal(failed.executionState, EXECUTION_STATE.COMPLETE);
   assert.equal(failed.returnState, RETURN_STATE.FAILED);
@@ -87,7 +87,7 @@ test('verification without evidence cannot complete', async () => {
   const kernel = makeKernel();
   await activeRun(kernel);
   await kernel.beginVerification('RUN-1');
-  const unknown = await kernel.verify('RUN-1', { evidence: [], versionGate: { status: 'PASS' } });
+  const unknown = await kernel.verify('RUN-1', { evidence: [], verification: { status: 'PASS' } });
   assert.equal(unknown.executionState, EXECUTION_STATE.UNKNOWN);
 });
 
@@ -95,7 +95,7 @@ test('subject qualification requires an owner decision and is separate from run 
   const kernel = makeKernel();
   await activeRun(kernel);
   await kernel.beginVerification('RUN-1');
-  await kernel.verify('RUN-1', { evidence: [{ kind: 'E', verificationScope: 'EXECUTION', source: { systemId: 'LOGIC' }, contentRef: 'evidence://e' }], versionGate: { status: 'PASS' } });
+  await kernel.verify('RUN-1', { evidence: [{ kind: 'E', verificationScope: 'EXECUTION', source: { systemId: 'LOGIC' }, contentRef: 'evidence://e' }], verification: { status: 'PASS' } });
   await assert.rejects(() => kernel.assessSubject('RUN-1', { status: SUBJECT_ASSESSMENT.QUALIFIED }), /OWNER_DECISION_REQUIRED/);
   const assessed = await kernel.assessSubject('RUN-1', { status: SUBJECT_ASSESSMENT.QUALIFIED, ownerDecisionRef: 'decision://owner', evidenceRefs: ['evidence://qual'] });
   assert.equal(assessed.executionState, EXECUTION_STATE.COMPLETE);
