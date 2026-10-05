@@ -39,6 +39,7 @@ export function createFactoryWorker(env = {}, { recordStore } = {}) {
 export default {
   fetch(request, env) {
     const recordStore = env.RECORD_STORE ? createR2RecordStore(env.RECORD_STORE) : undefined;
-    return createFactoryWorker(env, { recordStore }).fetch(request);
+    const runtimeEnv = { ...env, SOURCE_SHA: env.SOURCE_SHA || env.CF_VERSION_METADATA?.tag || env.CF_VERSION_METADATA?.id || 'UNKNOWN' };
+    return createFactoryWorker(runtimeEnv, { recordStore }).fetch(request);
   },
 };
