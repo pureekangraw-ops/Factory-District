@@ -2,57 +2,60 @@
 
 Factory District is the canonical home of the YGG METRO Factory.
 
-## Current execution layers
+## Factory execution layers
 
 1. Factory Station → Hall → PIXIE foundation
 2. Universal Machine Foundation
 3. Durable Run / Evidence boundary
 4. CODE Machinery foundation
 5. VISUAL Machinery foundation
+6. LOGIC Workspace + Health/Golden/Tracking
+7. Bilateral Rail Link + Factory E2E
+8. PIXIE Autonomous Lifecycle
 
-## VISUAL Machinery
+## LOGIC Workspace
 
-All first-round visual work uses one Machine Contract and one pipeline. The target menu selects the adapter; it does not create a separate lifecycle.
-
-Supported targets:
-
-- UI/Web
-- Hero/Image
-- Wallpaper
-- Icon
-- Presentation/Mockup
-
-Supported modes:
-
-- `MENU`
-- `MANUAL`
-
-Pipeline:
+LOGIC uses the shared Machine Kernel but its run completion is not subject maturity or agent qualification.
 
 ```text
-Input Inspector
-  → Visual Interpreter
-  → Composition
-  → Create/Edit
-  → Render
-  → Visual Inspector
-  → Compare
-  → Correction (when required)
-  → Export
-  → Final Output Verify
-  → Version Gate
-  → VISUAL Return
+Design Bench
+  → Build Bench
+  → Development Bench
+  → Simulation
+  → Golden Case Vault
+  → Evaluation
+  → RCA (when required)
+  → Agent Qualification
+  → Versioning
+  → LOGIC Return
 ```
 
-### VISUAL safety rules
+Logic Registry, health history, and field results use the DurableStore boundary. Qualification remains an Owner decision.
 
-- Rendered output is not approval.
-- Compare failure must enter Correction or return a failure state.
-- Final output must be verified before completion.
-- Design/output version mismatch produces `UNKNOWN`, never `COMPLETE`.
-- Visual evidence is scoped to the actual operation: render, inspection, comparison, correction, export, or final output.
-- The pipeline uses the shared Machine Kernel and DurableStore boundaries.
-- No visual engine is imported from Ergasterion in this phase.
+## Bilateral Rail and PIXIE E2E
+
+The Rail contract is bilateral:
+
+```text
+Station A ── Rail Link ── Station B
+                 │
+          one trust boundary
+```
+
+A link has exactly two endpoints. Transport failure, destination rejection, and readback failure remain distinct from internal Factory and PIXIE failures.
+
+PIXIE selects a domain and machine, runs it through the shared lifecycle, observes the result, and returns evidence. GO/LIGHT do not drive individual machine steps; authority boundaries are the only escalation points.
+
+## Invariants
+
+- `HANDOFF_VERIFIED` is not `COMPLETE`.
+- Cancellation must be verified; unverified cancellation is `UNKNOWN`.
+- Execution completion and return delivery are independent.
+- MachineRun completion never implies subject/system maturity unless the Owner contract explicitly says so.
+- LOGIC run completion never implies Logic/Agent qualification.
+- A bilateral Rail Link has exactly two Station endpoints and one trust boundary.
+- Transport failure does not make Metropolis, Factory, or unrelated Stations unavailable.
+- No legacy Ergasterion engine is imported automatically.
 
 ```bash
 npm test
