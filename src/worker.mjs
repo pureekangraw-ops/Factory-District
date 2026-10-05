@@ -1,3 +1,4 @@
+import { createR2RecordStore } from './r2-record-store.mjs';
 import { createFactoryRuntime } from './factory-runtime.mjs';
 
 function json(body, status = 200) {
@@ -37,6 +38,7 @@ export function createFactoryWorker(env = {}, { recordStore } = {}) {
 
 export default {
   fetch(request, env) {
-    return createFactoryWorker(env, { recordStore: env.RECORD_STORE }).fetch(request);
+    const recordStore = env.RECORD_STORE ? createR2RecordStore(env.RECORD_STORE) : undefined;
+    return createFactoryWorker(env, { recordStore }).fetch(request);
   },
 };
