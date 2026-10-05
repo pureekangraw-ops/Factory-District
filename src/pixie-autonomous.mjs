@@ -3,7 +3,7 @@ import { FAILURE_CLASS } from './machine-contract.mjs';
 export const PIXIE_PHASE = Object.freeze({ RECEIVE: 'RECEIVE', SELECT: 'SELECT', EXECUTE: 'EXECUTE', OBSERVE: 'OBSERVE', RECOVER: 'RECOVER', VERIFY: 'VERIFY', RETURN: 'RETURN' });
 
 function completed(result) {
-  return result?.run?.returnState === 'RETURNED' || result?.run?.executionState === 'COMPLETE' || result?.lifecycleStatus === 'COMPLETE';
+  return result?.run?.executionState === 'COMPLETE' && result?.run?.returnState === 'RETURNED';
 }
 
 function blocked(result) {
