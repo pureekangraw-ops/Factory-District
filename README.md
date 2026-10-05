@@ -21,6 +21,17 @@ METROPOLIS STATION
 
 The first runtime slice proves the receiving boundary and handoff path. It does not claim that CODE, VISUAL, or LOGIC work is complete.
 
+## Semantic boundary
+
+`HANDOFF_VERIFIED` means only that the Factory boundary delivered the handoff to the selected owner-domain skeleton and produced evidence for that boundary event.
+
+Every successful foundation receipt/readback carries:
+
+- `verificationScope: BOUNDARY_HANDOFF`
+- `domainCompleted: false`
+
+`HANDOFF_VERIFIED` must not be consumed as owner-domain `VERIFIED` or `DONE`. A future owner-domain verification step will use a separate semantic contract.
+
 ## Runtime surfaces
 
 - `GET /health` returns `status`, `sourceSha`, `runtimeSha`, and `observedAt`.
@@ -55,11 +66,11 @@ source Station
   → Factory Hall
   → PIXIE
   → correct owner domain
-  → PIXIE result/evidence
+  → boundary handoff evidence
   → receipt/readback
 ```
 
-They also prove denied scope, unavailable destination, source-SHA mismatch, and receipt-versus-completion behavior fail closed. The foundation verification is a boundary handoff verification, not a claim that domain work is DONE.
+They also prove denied scope, unavailable destination, source-SHA mismatch, and boundary-verification-versus-domain-completion behavior fail closed. The foundation verification is not a claim that domain work is DONE.
 
 ```bash
 npm test

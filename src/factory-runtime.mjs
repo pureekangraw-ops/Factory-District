@@ -3,6 +3,7 @@ import {
   createReceipt,
   FACTORY_STATUS,
   FACTORY_STATION_ID,
+  FACTORY_VERIFICATION_SCOPE,
 } from './contract.mjs';
 import { createPixie } from './pixie.mjs';
 
@@ -43,6 +44,8 @@ export function createFactoryRuntime({
     let status = FACTORY_STATUS.ACCEPTED;
     let outcome = null;
     let evidenceRef = null;
+    let verificationScope = null;
+    let domainCompleted = false;
     let reason = null;
     let pixieResult = null;
 
@@ -53,18 +56,22 @@ export function createFactoryRuntime({
       pixieResult = await pixie.execute(handoff, { sourceSha });
       status = statusCode(pixieResult.status);
       reason = pixieResult.reason || null;
-      outcome = pixieResult.status === FACTORY_STATUS.VERIFIED ? FACTORY_STATUS.VERIFIED : null;
+      outcome = pixieResult.status === FACTORY_STATUS.HANDOFF_VERIFIED ? FACTORY_STATUS.HANDOFF_VERIFIED : null;
       evidenceRef = pixieResult.evidence?.evidenceRef || null;
+      verificationScope = pixieResult.verificationScope || null;
+      domainCompleted = pixieResult.domainCompleted === true;
     }
 
-    const receipt = createReceipt({ receiptId, handoff, status, acceptedAt, outcome, evidenceRef, reason });
+    const receipt = createReceipt({ receiptId, handoff, status, acceptedAt, outcome, evidenceRef, verificationScope, domainCompleted, reason });
     const readback = {
       receiptId,
       workId: handoff.workId,
       checkpointId: handoff.checkpointId,
       stationId: FACTORY_STATION_ID,
       status,
-      verified: status === FACTORY_STATUS.VERIFIED && Boolean(evidenceRef),
+      boundaryVerified: status === FACTORY_STATUS.HANDOFF_VERIFIED && verificationScope === FACTORY_VERIFICATION_SCOPE.BOUNDARY_HANDOFF && Boolean(evidenceRef),
+      verificationScope,
+      domainCompleted,
       evidenceRef,
       sourceSha,
       observedAt: clock(),
@@ -77,7 +84,7 @@ export function createFactoryRuntime({
   function readback(receiptId) {
     const id = requiredString(receiptId, 'receiptId');
     const record = receipts.get(id);
-    if (!record) return { status: FACTORY_STATUS.UNKNOWN, verified: false, receiptId: id, reason: 'RECEIPT_NOT_FOUND' };
+    if (!record) return { status: FACTORY_STATUS.UNKNOWN, boundaryVerified: false, verificationScope: null, domainCompleted: false, receiptId: id, reason: 'RECEIPT_NOT_FOUND' };
     return record.readback;
   }
 

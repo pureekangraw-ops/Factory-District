@@ -3,13 +3,14 @@ export const FACTORY_CONTRACT_VERSION = '0.1.0';
 export const FACTORY_STATUS = Object.freeze({
   READY: 'READY',
   ACCEPTED: 'ACCEPTED',
-  VERIFIED: 'VERIFIED',
+  HANDOFF_VERIFIED: 'HANDOFF_VERIFIED',
   DENIED: 'DENIED',
   UNKNOWN: 'UNKNOWN',
   FAILED: 'FAILED',
   UNAVAILABLE: 'UNAVAILABLE',
 });
 
+export const FACTORY_VERIFICATION_SCOPE = Object.freeze({ BOUNDARY_HANDOFF: 'BOUNDARY_HANDOFF' });
 export const FACTORY_DOMAINS = Object.freeze(['CODE', 'VISUAL', 'LOGIC']);
 export const FACTORY_STATION_ID = 'FACTORY-STATION';
 
@@ -63,7 +64,7 @@ export function createHandoff(input = {}) {
   });
 }
 
-export function createReceipt({ receiptId, handoff, status, acceptedAt, outcome = null, evidenceRef = null, reason = null }) {
+export function createReceipt({ receiptId, handoff, status, acceptedAt, outcome = null, evidenceRef = null, verificationScope = null, domainCompleted = false, reason = null }) {
   return Object.freeze({
     kind: 'FACTORY_RECEIPT',
     contractVersion: FACTORY_CONTRACT_VERSION,
@@ -74,12 +75,14 @@ export function createReceipt({ receiptId, handoff, status, acceptedAt, outcome 
     status: requiredString(status, 'status'),
     outcome,
     evidenceRef,
+    verificationScope,
+    domainCompleted,
     reason,
     acceptedAt: requiredString(acceptedAt, 'acceptedAt'),
   });
 }
 
-export function createEvidence({ evidenceRef, handoff, observedAt, sourceSha, verificationKind, details = {} }) {
+export function createEvidence({ evidenceRef, handoff, observedAt, sourceSha, verificationScope, details = {} }) {
   return Object.freeze({
     kind: 'FACTORY_EVIDENCE',
     evidenceRef: requiredString(evidenceRef, 'evidenceRef'),
@@ -87,7 +90,7 @@ export function createEvidence({ evidenceRef, handoff, observedAt, sourceSha, ve
     checkpointId: handoff.checkpointId,
     ownerDomain: handoff.ownerDomain,
     sourceSha: requiredString(sourceSha, 'sourceSha'),
-    verificationKind: requiredString(verificationKind, 'verificationKind'),
+    verificationScope: requiredString(verificationScope, 'verificationScope'),
     observedAt: requiredString(observedAt, 'observedAt'),
     details: Object.freeze({ ...details }),
   });

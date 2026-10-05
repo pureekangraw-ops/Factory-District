@@ -37,13 +37,17 @@ test('health exposes exact source and runtime SHA', () => {
   });
 });
 
-test('CODE, VISUAL and LOGIC all travel through PIXIE and return evidence', async () => {
+test('CODE, VISUAL and LOGIC return boundary handoff evidence, not domain completion', async () => {
   const factory = runtime();
   for (const domain of ['CODE', 'VISUAL', 'LOGIC']) {
     const result = await factory.receive(base(domain));
-    assert.equal(result.receipt.status, 'VERIFIED');
-    assert.equal(result.receipt.outcome, 'VERIFIED');
-    assert.equal(result.readback.verified, true);
+    assert.equal(result.receipt.status, 'HANDOFF_VERIFIED');
+    assert.equal(result.receipt.outcome, 'HANDOFF_VERIFIED');
+    assert.equal(result.receipt.verificationScope, 'BOUNDARY_HANDOFF');
+    assert.equal(result.receipt.domainCompleted, false);
+    assert.equal(result.readback.boundaryVerified, true);
+    assert.equal(result.readback.verificationScope, 'BOUNDARY_HANDOFF');
+    assert.equal(result.readback.domainCompleted, false);
     assert.match(result.readback.evidenceRef, /^evidence:\/\/factory\//);
     assert.equal(result.pixie.result.domain, domain);
   }
@@ -53,7 +57,7 @@ test('wrong scope fails closed as DENIED', async () => {
   const result = await runtime().receive(base('CODE', { scope: ['EXECUTE:VISUAL'] }));
   assert.equal(result.receipt.status, 'DENIED');
   assert.equal(result.receipt.reason, 'SCOPE_NOT_GRANTED');
-  assert.equal(result.readback.verified, false);
+  assert.equal(result.readback.boundaryVerified, false);
 });
 
 test('missing destination is UNKNOWN, not fabricated success', async () => {
@@ -61,18 +65,20 @@ test('missing destination is UNKNOWN, not fabricated success', async () => {
   const result = await factory.receive(base('LOGIC'));
   assert.equal(result.receipt.status, 'UNKNOWN');
   assert.equal(result.receipt.reason, 'DESTINATION_UNAVAILABLE');
-  assert.equal(result.readback.verified, false);
+  assert.equal(result.readback.boundaryVerified, false);
 });
 
 test('source SHA mismatch is UNKNOWN', async () => {
   const result = await runtime().receive(base('CODE', { expectedSourceSha: 'stale-sha' }));
   assert.equal(result.receipt.status, 'UNKNOWN');
   assert.equal(result.receipt.reason, 'SHA_MISMATCH');
-  assert.equal(result.readback.verified, false);
+  assert.equal(result.readback.boundaryVerified, false);
 });
 
-test('receipt is not completion: foundation result remains completed false', async () => {
+test('handoff evidence is not domain completion', async () => {
   const result = await runtime().receive(base('CODE'));
-  assert.equal(result.receipt.status, 'VERIFIED');
+  assert.equal(result.receipt.status, 'HANDOFF_VERIFIED');
+  assert.equal(result.receipt.verificationScope, 'BOUNDARY_HANDOFF');
   assert.equal(result.pixie.result.completed, false);
+  assert.equal(result.readback.domainCompleted, false);
 });

@@ -20,9 +20,14 @@ test('Worker exposes health, receive and readback with exact SHA', async () => {
   }));
   assert.equal(receive.status, 202);
   const body = await receive.json();
-  assert.equal(body.receipt.status, 'VERIFIED');
+  assert.equal(body.receipt.status, 'HANDOFF_VERIFIED');
+  assert.equal(body.receipt.verificationScope, 'BOUNDARY_HANDOFF');
+  assert.equal(body.receipt.domainCompleted, false);
 
   const readback = await worker.fetch(new Request(`https://factory.example/station/readback/${body.receipt.receiptId}`));
   assert.equal(readback.status, 200);
-  assert.equal((await readback.json()).verified, true);
+  const readbackBody = await readback.json();
+  assert.equal(readbackBody.boundaryVerified, true);
+  assert.equal(readbackBody.verificationScope, 'BOUNDARY_HANDOFF');
+  assert.equal(readbackBody.domainCompleted, false);
 });

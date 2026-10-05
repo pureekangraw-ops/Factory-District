@@ -1,4 +1,4 @@
-import { createEvidence, FACTORY_DOMAINS, FACTORY_STATUS } from './contract.mjs';
+import { createEvidence, FACTORY_DOMAINS, FACTORY_STATUS, FACTORY_VERIFICATION_SCOPE } from './contract.mjs';
 
 function requiredString(value, name) {
   if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${name}_REQUIRED`);
@@ -25,10 +25,16 @@ export function createPixie({ clock = () => new Date().toISOString(), idFactory 
       handoff,
       observedAt,
       sourceSha: sourceSha || 'UNKNOWN',
-      verificationKind: 'BOUNDARY_HANDOFF',
-      details: { pixie: 'PIXIE', ownerResult: result },
+      verificationScope: FACTORY_VERIFICATION_SCOPE.BOUNDARY_HANDOFF,
+      details: { pixie: 'PIXIE', ownerResult: result, domainCompleted: false },
     });
-    return { status: FACTORY_STATUS.VERIFIED, result, evidence };
+    return {
+      status: FACTORY_STATUS.HANDOFF_VERIFIED,
+      result,
+      evidence,
+      verificationScope: FACTORY_VERIFICATION_SCOPE.BOUNDARY_HANDOFF,
+      domainCompleted: false,
+    };
   }
 
   return Object.freeze({ execute });
