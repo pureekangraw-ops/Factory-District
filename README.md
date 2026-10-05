@@ -2,46 +2,60 @@
 
 Factory District is the canonical home of the YGG METRO Factory.
 
-## Current execution layers
+## Factory execution layers
 
 1. Factory Station → Hall → PIXIE foundation
 2. Universal Machine Foundation
 3. Durable Run / Evidence boundary
 4. CODE Machinery foundation
+5. VISUAL Machinery foundation
+6. LOGIC Workspace + Health/Golden/Tracking
+7. Bilateral Rail Link + Factory E2E
+8. PIXIE Autonomous Lifecycle
 
-## CODE Machinery
+## LOGIC Workspace
 
-The first CODE machinery slice supports a common pipeline for Node/Web and Cloudflare Worker targets:
+LOGIC uses the shared Machine Kernel but its run completion is not subject maturity or agent qualification.
 
 ```text
-Repo Inspector
-  → Change Planner
-  → Code Executor
-  → Test Runner
-  → Build Engine
-  → Artifact Inspector
-  → CI Checkpoint
-  → Gate
-  → Deploy
-  → Runtime Verifier
-  → Version Gate
-  → CODE Return
+Design Bench
+  → Build Bench
+  → Development Bench
+  → Simulation
+  → Golden Case Vault
+  → Evaluation
+  → RCA (when required)
+  → Agent Qualification
+  → Versioning
+  → LOGIC Return
 ```
 
-The adapter contract is provider-neutral. It requires repository inspection, planning, execution, tests, build, artifact inspection, CI checkpoint, Gate, deploy, and runtime verification. Node/Web and Cloudflare Worker are target identities over the same contract.
+Logic Registry, health history, and field results use the DurableStore boundary. Qualification remains an Owner decision.
 
-### CODE safety rules
+## Bilateral Rail and PIXIE E2E
 
-- Gate must pass before deploy is called.
-- Build, artifact, deployment, and runtime records must preserve source SHA.
-- Runtime SHA mismatch produces `UNKNOWN`; it cannot become `COMPLETE`.
-- CI is a checkpoint, not completion.
-- Deploy is not verified until runtime readback.
-- Machine completion does not qualify the owner system.
-- Credentials remain in provider/Port adapters and never enter the Work envelope.
-- The current slice does not migrate engines from Ergasterion.
+The Rail contract is bilateral:
 
-The CODE machinery uses the Machine Kernel and DurableStore boundaries. It does not create a second lifecycle or local state store.
+```text
+Station A ── Rail Link ── Station B
+                 │
+          one trust boundary
+```
+
+A link has exactly two endpoints. Transport failure, destination rejection, and readback failure remain distinct from internal Factory and PIXIE failures.
+
+PIXIE selects a domain and machine, runs it through the shared lifecycle, observes the result, and returns evidence. GO/LIGHT do not drive individual machine steps; authority boundaries are the only escalation points.
+
+## Invariants
+
+- `HANDOFF_VERIFIED` is not `COMPLETE`.
+- Cancellation must be verified; unverified cancellation is `UNKNOWN`.
+- Execution completion and return delivery are independent.
+- MachineRun completion never implies subject/system maturity unless the Owner contract explicitly says so.
+- LOGIC run completion never implies Logic/Agent qualification.
+- A bilateral Rail Link has exactly two Station endpoints and one trust boundary.
+- Transport failure does not make Metropolis, Factory, or unrelated Stations unavailable.
+- No legacy Ergasterion engine is imported automatically.
 
 ```bash
 npm test
