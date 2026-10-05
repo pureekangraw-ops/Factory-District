@@ -8,40 +8,51 @@ Factory District is the canonical home of the YGG METRO Factory.
 2. Universal Machine Foundation
 3. Durable Run / Evidence boundary
 4. CODE Machinery foundation
+5. VISUAL Machinery foundation
 
-## CODE Machinery
+## VISUAL Machinery
 
-The first CODE machinery slice supports a common pipeline for Node/Web and Cloudflare Worker targets:
+All first-round visual work uses one Machine Contract and one pipeline. The target menu selects the adapter; it does not create a separate lifecycle.
+
+Supported targets:
+
+- UI/Web
+- Hero/Image
+- Wallpaper
+- Icon
+- Presentation/Mockup
+
+Supported modes:
+
+- `MENU`
+- `MANUAL`
+
+Pipeline:
 
 ```text
-Repo Inspector
-  → Change Planner
-  → Code Executor
-  → Test Runner
-  → Build Engine
-  → Artifact Inspector
-  → CI Checkpoint
-  → Gate
-  → Deploy
-  → Runtime Verifier
+Input Inspector
+  → Visual Interpreter
+  → Composition
+  → Create/Edit
+  → Render
+  → Visual Inspector
+  → Compare
+  → Correction (when required)
+  → Export
+  → Final Output Verify
   → Version Gate
-  → CODE Return
+  → VISUAL Return
 ```
 
-The adapter contract is provider-neutral. It requires repository inspection, planning, execution, tests, build, artifact inspection, CI checkpoint, Gate, deploy, and runtime verification. Node/Web and Cloudflare Worker are target identities over the same contract.
+### VISUAL safety rules
 
-### CODE safety rules
-
-- Gate must pass before deploy is called.
-- Build, artifact, deployment, and runtime records must preserve source SHA.
-- Runtime SHA mismatch produces `UNKNOWN`; it cannot become `COMPLETE`.
-- CI is a checkpoint, not completion.
-- Deploy is not verified until runtime readback.
-- Machine completion does not qualify the owner system.
-- Credentials remain in provider/Port adapters and never enter the Work envelope.
-- The current slice does not migrate engines from Ergasterion.
-
-The CODE machinery uses the Machine Kernel and DurableStore boundaries. It does not create a second lifecycle or local state store.
+- Rendered output is not approval.
+- Compare failure must enter Correction or return a failure state.
+- Final output must be verified before completion.
+- Design/output version mismatch produces `UNKNOWN`, never `COMPLETE`.
+- Visual evidence is scoped to the actual operation: render, inspection, comparison, correction, export, or final output.
+- The pipeline uses the shared Machine Kernel and DurableStore boundaries.
+- No visual engine is imported from Ergasterion in this phase.
 
 ```bash
 npm test
