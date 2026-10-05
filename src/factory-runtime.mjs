@@ -81,6 +81,7 @@ export function createFactoryRuntime({
       domainCompleted,
       evidenceRef,
       sourceSha,
+      machineResult: pixieResult?.result?.machineResult || null,
       observedAt: clock(),
       reason,
     };

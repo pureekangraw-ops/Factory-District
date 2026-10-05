@@ -2,6 +2,24 @@
 
 Factory District is the canonical home of the YGG METRO Factory.
 
+## Worker readiness and execution
+
+The deployed Worker uses R2 for receipts and readback. Wrangler's build command
+embeds the checked-out Git commit from `WORKERS_CI_COMMIT_SHA`, `GITHUB_SHA`, or
+`git rev-parse HEAD`. A Cloudflare version UUID is not a source commit.
+
+`createFactoryWorker(env, { recordStore, domainRunners })` routes registered
+CODE/VISUAL/LOGIC runners through the existing PIXIE operator. Completed work
+must preserve Work identity, return successfully, and carry machine evidence.
+Machine output is persisted with the receipt and returned by Station readback.
+
+Production provider runners are not registered in the default Worker entrypoint.
+Operational execution therefore returns `UNKNOWN / MACHINE_NOT_REGISTERED`.
+Health reports readiness separately for each domain. Only the explicit
+`LIVE_E2E_BOUNDARY_HANDOFF` intent exercises the boundary without executing a
+domain; its `domainCompleted` remains false. This is not production machinery
+acceptance.
+
 ## Current execution layers
 
 1. Factory Station → Hall → PIXIE foundation
