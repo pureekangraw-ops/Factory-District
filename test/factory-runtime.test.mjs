@@ -39,3 +39,38 @@ test('CODE, VISUAL and LOGIC use durable receipt/readback storage', async () => 
 test('missing durable store fails closed instead of creating runtime memory state', () => {
   assert.throws(() => createFactoryRuntime({ sourceSha: 'abc123', domainHandlers: {} }), /durableStore_REQUIRED/);
 });
+
+
+test('wrong scope remains DENIED with durable storage', async () => {
+  const result = await runtime().receive(base('CODE', { scope: ['EXECUTE:VISUAL'] }));
+  assert.equal(result.receipt.status, 'DENIED');
+  assert.equal(result.receipt.reason, 'SCOPE_NOT_GRANTED');
+  assert.equal(result.readback.boundaryVerified, false);
+  assert.equal(result.readback.domainCompleted, false);
+});
+
+test('missing destination remains UNKNOWN, not fabricated success', async () => {
+  const factory = runtime({ domainHandlers: { CODE: async () => ({ domain: 'CODE', completed: false }) } });
+  const result = await factory.receive(base('LOGIC'));
+  assert.equal(result.receipt.status, 'UNKNOWN');
+  assert.equal(result.receipt.reason, 'DESTINATION_UNAVAILABLE');
+  assert.equal(result.readback.boundaryVerified, false);
+  assert.equal(result.readback.domainCompleted, false);
+});
+
+test('source SHA mismatch remains UNKNOWN with durable storage', async () => {
+  const result = await runtime().receive(base('CODE', { expectedSourceSha: 'stale-sha' }));
+  assert.equal(result.receipt.status, 'UNKNOWN');
+  assert.equal(result.receipt.reason, 'SHA_MISMATCH');
+  assert.equal(result.readback.boundaryVerified, false);
+});
+
+test('boundary handoff evidence remains distinct from domain completion', async () => {
+  const result = await runtime().receive(base('CODE'));
+  assert.equal(result.receipt.status, 'HANDOFF_VERIFIED');
+  assert.equal(result.receipt.verificationScope, 'BOUNDARY_HANDOFF');
+  assert.equal(result.receipt.domainCompleted, false);
+  assert.equal(result.readback.verificationScope, 'BOUNDARY_HANDOFF');
+  assert.equal(result.readback.domainCompleted, false);
+  assert.equal(result.pixie.result.completed, false);
+});
