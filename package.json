@@ -1,10 +1,10 @@
 {
   "name": "factory-district",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/contract.mjs && node --check src/pixie.mjs && node --check src/factory-runtime.mjs && node --check src/worker.mjs && node --check src/machine-contract.mjs && node --check src/machine-state.mjs && node --check src/persistence.mjs && node --check src/machine-kernel.mjs && node --check src/durable-store.mjs"
+    "check": "node --check src/contract.mjs && node --check src/pixie.mjs && node --check src/factory-runtime.mjs && node --check src/worker.mjs && node --check src/machine-contract.mjs && node --check src/machine-state.mjs && node --check src/persistence.mjs && node --check src/machine-kernel.mjs && node --check src/durable-store.mjs && node --check src/code-contract.mjs && node --check src/code-adapters.mjs && node --check src/code-machine.mjs"
   }
 }
