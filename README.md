@@ -2,7 +2,7 @@
 
 Factory District is the canonical home of the YGG METRO Factory.
 
-## Factory execution layers
+## Current execution layers
 
 1. Factory Station → Hall → PIXIE foundation
 2. Universal Machine Foundation
@@ -12,50 +12,30 @@ Factory District is the canonical home of the YGG METRO Factory.
 6. LOGIC Workspace + Health/Golden/Tracking
 7. Bilateral Rail Link + Factory E2E
 8. PIXIE Autonomous Lifecycle
+9. Production Integration Foundation
 
-## LOGIC Workspace
+## Production Integration Foundation
 
-LOGIC uses the shared Machine Kernel but its run completion is not subject maturity or agent qualification.
-
-```text
-Design Bench
-  → Build Bench
-  → Development Bench
-  → Simulation
-  → Golden Case Vault
-  → Evaluation
-  → RCA (when required)
-  → Agent Qualification
-  → Versioning
-  → LOGIC Return
-```
-
-Logic Registry, health history, and field results use the DurableStore boundary. Qualification remains an Owner decision.
-
-## Bilateral Rail and PIXIE E2E
-
-The Rail contract is bilateral:
+The integration layer keeps provider credentials at a Port boundary and binds deployment to runtime readback:
 
 ```text
-Station A ── Rail Link ── Station B
-                 │
-          one trust boundary
+Provider Port
+  → capability evidence
+  → Bilateral Rail
+  → Factory Station
+  → PIXIE / Machine
+  → receipt/readback
+  → source SHA
+  → deployment
+  → destination
+  → runtime SHA + health
 ```
 
-A link has exactly two endpoints. Transport failure, destination rejection, and readback failure remain distinct from internal Factory and PIXIE failures.
+A runtime is not verified merely because deployment returned an accepted response. Source SHA, deployment reference, destination and runtime readback must match. Any missing or mismatched evidence is `UNKNOWN`.
 
-PIXIE selects a domain and machine, runs it through the shared lifecycle, observes the result, and returns evidence. GO/LIGHT do not drive individual machine steps; authority boundaries are the only escalation points.
+Provider credentials are references held by the Port. They never enter the Work envelope or Rail payload.
 
-## Invariants
-
-- `HANDOFF_VERIFIED` is not `COMPLETE`.
-- Cancellation must be verified; unverified cancellation is `UNKNOWN`.
-- Execution completion and return delivery are independent.
-- MachineRun completion never implies subject/system maturity unless the Owner contract explicitly says so.
-- LOGIC run completion never implies Logic/Agent qualification.
-- A bilateral Rail Link has exactly two Station endpoints and one trust boundary.
-- Transport failure does not make Metropolis, Factory, or unrelated Stations unavailable.
-- No legacy Ergasterion engine is imported automatically.
+This phase defines the provider-neutral integration contract and tests. It does not select a production vendor, inject real credentials, or deploy to a live destination.
 
 ```bash
 npm test
