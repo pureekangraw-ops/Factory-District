@@ -4,6 +4,8 @@ Factory District is the canonical home of the YGG METRO Factory.
 
 ## Phase 1 foundation
 
+The runtime boundary is implemented as:
+
 ```text
 METROPOLIS STATION
         ⇅
@@ -19,58 +21,71 @@ METROPOLIS STATION
  CODE VISUAL LOGIC
 ```
 
-The first runtime slice proves the receiving boundary and handoff path. It does not claim that CODE, VISUAL, or LOGIC work is complete.
+`HANDOFF_VERIFIED` proves only boundary delivery. It is not owner-domain completion.
 
-## Semantic boundary
+## Phase 2 — Universal Machine Foundation
 
-`HANDOFF_VERIFIED` means only that the Factory boundary delivered the handoff to the selected owner-domain skeleton and produced evidence for that boundary event.
+The machine kernel provides a common execution contract before CODE, VISUAL, or LOGIC machinery is installed.
 
-Every successful foundation receipt/readback carries:
+```text
+RECEIVE
+  → INTERPRET
+  → EXECUTE
+  → VERIFY
+  → COMPLETE
+  → RETURN
+```
 
-- `verificationScope: BOUNDARY_HANDOFF`
-- `domainCompleted: false`
+The kernel separates two axes:
 
-`HANDOFF_VERIFIED` must not be consumed as owner-domain `VERIFIED` or `DONE`. A future owner-domain verification step will use a separate semantic contract.
+- `executionState`: the execution lifecycle of this run.
+- `returnState`: whether the result was delivered back.
 
-## Runtime surfaces
+A run may be `executionState: COMPLETE` while `returnState: FAILED` or `PENDING`. Return failure never rewinds completed execution.
 
-- `GET /health` returns `status`, `sourceSha`, `runtimeSha`, and `observedAt`.
-- `POST /station/receive` accepts a Factory handoff at the Factory Station and routes it internally through Factory Hall and PIXIE.
-- `GET /station/readback/:receiptId` returns live receipt/readback state and evidence.
-- The foundation worker can be deployed to Cloudflare with `SOURCE_SHA` or `COMMIT_SHA` set to the deployed commit.
+Cancellation is explicit:
+
+```text
+EXECUTING / VERIFYING
+        ↓ request cancel
+CANCELLING
+        ├─ verified stop evidence → CANCELLED
+        └─ stop cannot be verified → UNKNOWN
+```
+
+Run completion does not claim subject maturity. In particular, a completed LOGIC experiment does not imply that the Logic or Agent is qualified. Qualification requires an Owner decision and evidence.
+
+## Persistence boundary
+
+The Machine Kernel requires a `PersistenceAdapter`. It does not own runtime state and does not create an in-process state store. The adapter contract covers:
+
+- run creation and loading
+- optimistic transition with `expectedSequence`
+- attempt lineage
+- heartbeat
+- failure and cancellation records
+- evidence
+- Version Gate
+- return records
+- event and lineage reads
+
+The current test suite uses an in-memory adapter only under `test/support/`. A durable vendor adapter is intentionally not selected in this phase.
 
 ## Invariants
 
 - Every system-to-system connection enters through the receiving Station or Port.
 - No Rail may connect directly to an internal backend, agent, database, or owner domain.
-- Factory Station is the Factory connection boundary.
-- Factory Hall is the operational entry surface inside Factory. It is not a Board and is not a truth database.
-- PIXIE is the Factory operator agent. PIXIE receives work, runs the appropriate Factory systems within granted authority, observes results, retries or performs RCA where allowed, gathers evidence, and reports the result.
-- PIXIE does not become the owner of CODE, VISUAL, or LOGIC.
-- CODE owns code. VISUAL owns visual. LOGIC owns logic.
-- Cross-domain work uses an explicit handoff. Domains do not silently assume each other's authority.
-- Operational truth remains with the responsible owner system. Missing evidence is UNKNOWN.
-- Command success is not DONE. Completion requires the required verification/readback.
 - Credentials never travel inside a handoff envelope.
-- Factory identity is singular. Do not create old/new/v1/v2 operational identities or compatibility aliases.
-- Proven engines may be reused from older Factory implementations, but old architecture, routes, authority assumptions, boards, and naming are not inherited automatically.
+- `HANDOFF_VERIFIED` is not `COMPLETE`.
+- Cancellation must be verified; unverified cancellation is `UNKNOWN`.
+- Execution completion and return delivery are independent states.
+- MachineRun completion never implies subject/system maturity unless the Owner contract explicitly says so.
+- Operational truth remains with the responsible owner system. Missing evidence is `UNKNOWN`.
+- Proven engines from Ergasterion are not imported automatically.
 
-## Phase 1 acceptance
+## Current scope
 
-The automated tests prove three representative handoffs travel through the foundation path:
-
-```text
-source Station
-  → Rail boundary
-  → Factory Station
-  → Factory Hall
-  → PIXIE
-  → correct owner domain
-  → boundary handoff evidence
-  → receipt/readback
-```
-
-They also prove denied scope, unavailable destination, source-SHA mismatch, and boundary-verification-versus-domain-completion behavior fail closed. The foundation verification is not a claim that domain work is DONE.
+This phase contains the execution kernel and persistence boundary only. It does not install CODE, VISUAL, or LOGIC machinery, choose D1/DO/R2, or claim autonomous PIXIE operation.
 
 ```bash
 npm test
