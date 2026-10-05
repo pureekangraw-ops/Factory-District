@@ -2,7 +2,7 @@
 
 Factory District is the canonical home of the YGG METRO Factory.
 
-## Factory execution layers
+## Current execution layers
 
 1. Factory Station → Hall → PIXIE foundation
 2. Universal Machine Foundation
@@ -13,38 +13,37 @@ Factory District is the canonical home of the YGG METRO Factory.
 7. Bilateral Rail Link + Factory E2E
 8. PIXIE Autonomous Lifecycle
 
-## LOGIC Workspace
+## PIXIE Autonomous Lifecycle
 
-LOGIC uses the shared Machine Kernel but its run completion is not subject maturity or agent qualification.
-
-```text
-Design Bench
-  → Build Bench
-  → Development Bench
-  → Simulation
-  → Golden Case Vault
-  → Evaluation
-  → RCA (when required)
-  → Agent Qualification
-  → Versioning
-  → LOGIC Return
-```
-
-Logic Registry, health history, and field results use the DurableStore boundary. Qualification remains an Owner decision.
-
-## Bilateral Rail and PIXIE E2E
-
-The Rail contract is bilateral:
+PIXIE now owns orchestration across the domain machines without becoming their operational truth owner:
 
 ```text
-Station A ── Rail Link ── Station B
-                 │
-          one trust boundary
+RECEIVE
+  → SELECT DOMAIN + MACHINE
+  → EXECUTE
+  → OBSERVE
+  → RECOVER / RETRY within budget
+  → VERIFY
+  → RETURN
 ```
 
-A link has exactly two endpoints. Transport failure, destination rejection, and readback failure remain distinct from internal Factory and PIXIE failures.
+PIXIE stops at an authority boundary and returns `BLOCKED`. An unverified machine result returns `UNKNOWN`. GO/LIGHT do not drive individual machine steps.
 
-PIXIE selects a domain and machine, runs it through the shared lifecycle, observes the result, and returns evidence. GO/LIGHT do not drive individual machine steps; authority boundaries are the only escalation points.
+## Factory E2E
+
+The tested path is:
+
+```text
+Metropolis Station
+  → Bilateral Rail Link
+  → Factory Station
+  → PIXIE
+  → selected machine
+  → result
+  → receipt/readback
+```
+
+The Rail Link has exactly two Station endpoints and one trust boundary. Transport failure, destination failure, machine failure, authority block, and readback failure remain distinct outcomes.
 
 ## Invariants
 
@@ -54,7 +53,8 @@ PIXIE selects a domain and machine, runs it through the shared lifecycle, observ
 - MachineRun completion never implies subject/system maturity unless the Owner contract explicitly says so.
 - LOGIC run completion never implies Logic/Agent qualification.
 - A bilateral Rail Link has exactly two Station endpoints and one trust boundary.
-- Transport failure does not make Metropolis, Factory, or unrelated Stations unavailable.
+- PIXIE may retry only within the machine budget and authority.
+- PIXIE does not merge, deploy, qualify, or change Owner authority by itself.
 - No legacy Ergasterion engine is imported automatically.
 
 ```bash

@@ -1,0 +1,13 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createPixieOperator } from '../src/pixie-autonomous.mjs';
+import { createBilateralRailLink, travelRail } from '../src/rail-link.mjs';
+import { createFactoryStationReceiver } from '../src/factory-e2e.mjs';
+import { createDurableStore } from '../src/durable-store.mjs';
+import { createInMemoryDurableDriver } from './support/in-memory-durable-driver.mjs';
+
+test('PIXIE retries a retryable machine failure within the attempt budget', async () => { let calls = 0; const pixie = createPixieOperator({ maxAttempts: 2, domainRunners: { CODE: async () => { calls += 1; return calls === 1 ? { retryable: true, run: { executionState: 'UNKNOWN', returnState: 'PENDING' } } : { run: { executionState: 'COMPLETE', returnState: 'RETURNED' } }; } } }); const result = await pixie.run({ work: { workId: 'WORK-RETRY' }, domain: 'CODE', machineId: 'CODE-MACHINE', authorityRef: 'AUTH' }); assert.equal(result.status, 'RETURNED'); assert.equal(result.lifecycleStatus, 'COMPLETE'); assert.equal(result.attempts, 2); assert.ok(result.events.some((event) => event.phase === 'RECOVER')); });
+
+test('PIXIE stops at authority boundary without retrying', async () => { let calls = 0; const pixie = createPixieOperator({ maxAttempts: 3, domainRunners: { CODE: async () => { calls += 1; return { authorityBoundary: true, run: { executionState: 'BLOCKED', returnState: 'PENDING' } }; } } }); const result = await pixie.run({ work: { workId: 'WORK-BLOCKED' }, domain: 'CODE', machineId: 'CODE-MACHINE', authorityRef: 'AUTH' }); assert.equal(result.status, 'BLOCKED'); assert.equal(result.lifecycleStatus, 'BLOCKED'); assert.equal(calls, 1); });
+
+test('Factory Station → bilateral Rail → PIXIE → readback is verified', async () => { const link = createBilateralRailLink({ linkId: 'METRO-FACTORY', trustBoundaryRef: 'TB-1', endpoints: [{ endpointId: 'METRO-STATION', systemId: 'METROPOLIS', surfaceId: 'STATION-A' }, { endpointId: 'FACTORY-STATION', systemId: 'FACTORY', surfaceId: 'STATION-B' }] }); const pixie = createPixieOperator({ domainRunners: { CODE: async () => ({ run: { executionState: 'COMPLETE', returnState: 'RETURNED' } }) } }); const receiver = createFactoryStationReceiver({ pixie, store: createDurableStore({ driver: createInMemoryDurableDriver() }) }); const result = await travelRail({ link, envelope: { oathId: 'OATH-E2E', domain: 'CODE', machineId: 'CODE-MACHINE', authorityRef: 'AUTH', work: { workId: 'WORK-E2E' } }, dispatch: receiver.dispatch, readback: receiver.readback }); assert.equal(result.outcome, 'VERIFIED'); assert.equal(result.readback.pixieStatus, 'RETURNED'); assert.equal(result.readback.lifecycleStatus, 'COMPLETE'); });
