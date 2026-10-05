@@ -12,50 +12,30 @@ Factory District is the canonical home of the YGG METRO Factory.
 6. LOGIC Workspace + Health/Golden/Tracking
 7. Bilateral Rail Link + Factory E2E
 8. PIXIE Autonomous Lifecycle
+9. Production Integration Foundation
 
-## PIXIE Autonomous Lifecycle
+## Production Integration Foundation
 
-PIXIE now owns orchestration across the domain machines without becoming their operational truth owner:
-
-```text
-RECEIVE
-  → SELECT DOMAIN + MACHINE
-  → EXECUTE
-  → OBSERVE
-  → RECOVER / RETRY within budget
-  → VERIFY
-  → RETURN
-```
-
-PIXIE stops at an authority boundary and returns `BLOCKED`. An unverified machine result returns `UNKNOWN`. GO/LIGHT do not drive individual machine steps.
-
-## Factory E2E
-
-The tested path is:
+The integration layer keeps provider credentials at a Port boundary and binds deployment to runtime readback:
 
 ```text
-Metropolis Station
-  → Bilateral Rail Link
+Provider Port
+  → capability evidence
+  → Bilateral Rail
   → Factory Station
-  → PIXIE
-  → selected machine
-  → result
+  → PIXIE / Machine
   → receipt/readback
+  → source SHA
+  → deployment
+  → destination
+  → runtime SHA + health
 ```
 
-The Rail Link has exactly two Station endpoints and one trust boundary. Transport failure, destination failure, machine failure, authority block, and readback failure remain distinct outcomes.
+A runtime is not verified merely because deployment returned an accepted response. Source SHA, deployment reference, destination and runtime readback must match. Any missing or mismatched evidence is `UNKNOWN`.
 
-## Invariants
+Provider credentials are references held by the Port. They never enter the Work envelope or Rail payload.
 
-- `HANDOFF_VERIFIED` is not `COMPLETE`.
-- Cancellation must be verified; unverified cancellation is `UNKNOWN`.
-- Execution completion and return delivery are independent.
-- MachineRun completion never implies subject/system maturity unless the Owner contract explicitly says so.
-- LOGIC run completion never implies Logic/Agent qualification.
-- A bilateral Rail Link has exactly two Station endpoints and one trust boundary.
-- PIXIE may retry only within the machine budget and authority.
-- PIXIE does not merge, deploy, qualify, or change Owner authority by itself.
-- No legacy Ergasterion engine is imported automatically.
+This phase defines the provider-neutral integration contract and tests. It does not select a production vendor, inject real credentials, or deploy to a live destination.
 
 ```bash
 npm test
