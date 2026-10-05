@@ -41,9 +41,9 @@ export async function runLogicMachine({ kernel, adapter, work, actorRef = 'PIXIE
     } else requirePass(evaluation, LOGIC_STEP.EVALUATION);
     const qualification = await call(LOGIC_STEP.QUALIFICATION, { work, run, evaluation }, true);
     const version = await call(LOGIC_STEP.VERSIONING, { work, run, evaluation, qualification });
-    evidence.push({ kind: 'LOGIC_VERSION_GATE', verificationScope: 'VERSION', source: { systemId: 'LOGIC_MACHINE', surfaceId: LOGIC_STEP.VERSIONING }, contentRef: version.versionRef, metadata: { logicVersion: version.logicVersion } });
+    evidence.push({ kind: 'LOGIC_VERSION_VERIFICATION', verificationScope: 'VERSION', source: { systemId: 'LOGIC_MACHINE', surfaceId: LOGIC_STEP.VERSIONING }, contentRef: version.versionRef, metadata: { logicVersion: version.logicVersion } });
     run = await kernel.beginVerification(run.runId, { actorRef });
-    run = await kernel.verify(run.runId, { evidence, versionGate: { status: version.status === LOGIC_STATUS.PASS ? 'PASS' : 'UNKNOWN', observed: { logicVersion: version.logicVersion }, reason: 'LOGIC_RUN_VERSION_GATE' }, actorRef });
+    run = await kernel.verify(run.runId, { evidence, verification: { status: version.status === LOGIC_STATUS.PASS ? 'PASS' : 'UNKNOWN', observed: { logicVersion: version.logicVersion }, reason: 'LOGIC_RUN_VERSION_VERIFICATION' }, actorRef });
     if (run.executionState === EXECUTION_STATE.COMPLETE) run = await kernel.returnRun(run.runId, { resultRefs: [version.versionRef], evidenceRefs: evidence.map((item) => item.contentRef), boundaryStatus: 'HANDOFF_VERIFIED', nextAction: 'OWNER_QUALIFICATION_REVIEW' });
     else if (run.executionState === EXECUTION_STATE.UNKNOWN) run = await kernel.returnRun(run.runId, { resultRefs: [], evidenceRefs: evidence.map((item) => item.contentRef), boundaryStatus: 'HANDOFF_VERIFIED', nextAction: 'LOGIC_RUN_RECONCILIATION_REQUIRED' });
     return { run, steps, evidence, qualification, version };

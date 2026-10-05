@@ -132,7 +132,7 @@ export function createMachineRun(input = {}) {
     evidenceRefs: Object.freeze([]),
     failureRefs: Object.freeze([]),
     cancellationRef: null,
-    versionGateRef: null,
+    verificationRef: null,
     returnRef: null,
     sequence: 0,
     createdAt: requiredString(input.createdAt, 'createdAt'),

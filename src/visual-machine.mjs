@@ -86,9 +86,9 @@ export async function runVisualMachine({ kernel, adapter, work, actorRef = 'PIXI
     const output = await call(VISUAL_STEP.EXPORT, { work, run, render, inspection, comparison });
     const finalOutput = await call(VISUAL_STEP.FINAL_OUTPUT_VERIFY, { work, run, output, interpretation });
     const versionMatches = finalOutput.designVersion === interpretation.designVersion;
-    evidence.push({ kind: 'VISUAL_VERSION_GATE', verificationScope: 'VERSION', source: { systemId: 'VISUAL_MACHINE', surfaceId: VISUAL_STEP.VERSION_GATE }, contentRef: finalOutput.evidenceRef || output.outputRef, metadata: { expectedDesignVersion: interpretation.designVersion, observedDesignVersion: finalOutput.designVersion, matches: versionMatches } });
+    evidence.push({ kind: 'VISUAL_OUTPUT_VERIFICATION', verificationScope: 'VERSION', source: { systemId: 'VISUAL_MACHINE', surfaceId: VISUAL_STEP.FINAL_OUTPUT_VERIFY }, contentRef: finalOutput.evidenceRef || output.outputRef, metadata: { expectedDesignVersion: interpretation.designVersion, observedDesignVersion: finalOutput.designVersion, matches: versionMatches } });
     run = await kernel.beginVerification(run.runId, { actorRef });
-    run = await kernel.verify(run.runId, { evidence, versionGate: { status: versionMatches ? 'PASS' : 'UNKNOWN', observed: { designVersion: finalOutput.designVersion }, reason: versionMatches ? 'DESIGN_OUTPUT_VERSION_MATCH' : 'DESIGN_OUTPUT_VERSION_MISMATCH' }, actorRef });
+    run = await kernel.verify(run.runId, { evidence, verification: { status: versionMatches ? 'PASS' : 'UNKNOWN', observed: { designVersion: finalOutput.designVersion }, reason: versionMatches ? 'DESIGN_OUTPUT_VERSION_MATCH' : 'DESIGN_OUTPUT_VERSION_MISMATCH' }, actorRef });
     if (run.executionState === EXECUTION_STATE.COMPLETE) run = await kernel.returnRun(run.runId, { resultRefs: [output.outputRef], evidenceRefs: evidence.map((item) => item.contentRef), boundaryStatus: 'HANDOFF_VERIFIED', nextAction: 'VISUAL_OWNER_REVIEW_COMPLETE' });
     else if (run.executionState === EXECUTION_STATE.UNKNOWN) run = await kernel.returnRun(run.runId, { resultRefs: [], evidenceRefs: evidence.map((item) => item.contentRef), boundaryStatus: 'HANDOFF_VERIFIED', nextAction: 'VISUAL_VERSION_RECONCILIATION_REQUIRED' });
     return { run, steps, evidence, interpretation, output, finalOutput };

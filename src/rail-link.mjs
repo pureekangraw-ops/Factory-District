@@ -12,12 +12,11 @@ export function createBilateralRailLink({ linkId, trustBoundaryRef, endpoints } 
 export async function travelRail({ link, envelope, dispatch, readback } = {}) {
   if (!link?.endpoints || link.endpoints.length !== 2) throw new Error('BILATERAL_LINK_REQUIRED');
   if (typeof dispatch !== 'function' || typeof readback !== 'function') throw new TypeError('dispatch_and_readback_REQUIRED');
-  const oathId = envelope?.oathId || `oath-${Date.now()}`;
   let receipt;
-  try { receipt = await dispatch({ oathId, link, envelope }); } catch (error) { return { outcome: 'FAILED', failure: { stage: 'TRANSPORT', code: error.code || 'DISPATCH_ERROR', message: error.message } }; }
+  try { receipt = await dispatch({ link, envelope }); } catch (error) { return { outcome: 'FAILED', failure: { stage: 'TRANSPORT', code: error.code || 'DISPATCH_ERROR', message: error.message } }; }
   if (!receipt?.accepted) return { outcome: 'FAILED', failure: { stage: 'DESTINATION', code: receipt?.reason || 'DESTINATION_REJECTED', message: 'Destination did not accept envelope' }, receipt };
   let observed;
-  try { observed = await readback({ oathId, link, envelope, receipt }); } catch (error) { return { outcome: 'UNKNOWN', receipt, failure: { stage: 'READBACK', code: error.code || 'READBACK_ERROR', message: error.message } }; }
+  try { observed = await readback({ link, envelope, receipt }); } catch (error) { return { outcome: 'UNKNOWN', receipt, failure: { stage: 'READBACK', code: error.code || 'READBACK_ERROR', message: error.message } }; }
   if (observed?.verified !== true) return { outcome: 'UNKNOWN', receipt, readback: observed, failure: { stage: 'READBACK', code: 'READBACK_NOT_VERIFIED', message: 'Rail receipt lacks verified destination readback' } };
-  return { outcome: 'VERIFIED', oathId, receipt, readback: observed, evidenceRef: observed.evidenceRef || null };
+  return { outcome: 'VERIFIED', receipt, readback: observed, evidenceRef: observed.evidenceRef || null };
 }
