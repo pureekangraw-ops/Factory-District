@@ -11,7 +11,7 @@ test('Worker exposes health, receive and readback with durable adapter', async (
   assert.equal(health.status, 200);
   assert.equal((await health.json()).storage.status, 'READY');
 
-  const receive = await worker.fetch(new Request('https://factory.example/station/receive', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workId: 'WORK-WORKER', checkpointId: 'CP-1', source: { stationId: 'METROPOLIS-STATION', system: 'METROPOLIS' }, target: { stationId: 'FACTORY-STATION', system: 'FACTORY', component: 'FACTORY_HALL' }, ownerDomain: 'CODE', intent: 'EXECUTE', scope: ['EXECUTE:CODE'], expectedSourceSha: 'worker-sha-1' }) }));
+  const receive = await worker.fetch(new Request('https://factory.example/station/receive', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workId: 'WORK-WORKER', checkpointId: 'CP-1', source: { stationId: 'METROPOLIS-STATION', system: 'METROPOLIS' }, target: { stationId: 'FACTORY-STATION', system: 'FACTORY', component: 'FACTORY_HALL' }, ownerDomain: 'CODE', intent: 'LIVE_E2E_BOUNDARY_HANDOFF', scope: ['EXECUTE:CODE'], expectedSourceSha: 'worker-sha-1' }) }));
   assert.equal(receive.status, 202);
   const body = await receive.json();
   assert.equal(body.receipt.status, 'HANDOFF_VERIFIED');

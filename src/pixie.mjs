@@ -18,6 +18,8 @@ export function createPixie({ clock = () => new Date().toISOString(), idFactory 
     } catch (error) {
       return { status: FACTORY_STATUS.UNKNOWN, reason: 'DESTINATION_ERROR', error: error.code || error.message };
     }
+    if (result?.status === 'UNKNOWN') return { status: FACTORY_STATUS.UNKNOWN, reason: result.reason || 'MACHINE_RESULT_UNVERIFIED', result, domainCompleted: false };
+    const domainCompleted = result?.completed === true && result?.status === 'RETURNED';
     const evidenceRef = `evidence://factory/${encodeURIComponent(handoff.workId)}/${encodeURIComponent(handoff.checkpointId)}/${idFactory()}`;
     const observedAt = clock();
     const evidence = createEvidence({
@@ -26,14 +28,14 @@ export function createPixie({ clock = () => new Date().toISOString(), idFactory 
       observedAt,
       sourceSha: sourceSha || 'UNKNOWN',
       verificationScope: FACTORY_VERIFICATION_SCOPE.BOUNDARY_HANDOFF,
-      details: { pixie: 'PIXIE', ownerResult: result, domainCompleted: false },
+      details: { pixie: 'PIXIE', ownerResult: result, domainCompleted },
     });
     return {
       status: FACTORY_STATUS.HANDOFF_VERIFIED,
       result,
       evidence,
       verificationScope: FACTORY_VERIFICATION_SCOPE.BOUNDARY_HANDOFF,
-      domainCompleted: false,
+      domainCompleted,
     };
   }
 
