@@ -6,6 +6,7 @@ import {
   FACTORY_VERIFICATION_SCOPE,
 } from './contract.mjs';
 import { createPixie } from './pixie.mjs';
+import { assertDurableStore } from './durable-store.mjs';
 
 function requiredString(value, name) {
   if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${name}_REQUIRED`);
@@ -16,13 +17,18 @@ function statusCode(status) {
   return status === FACTORY_STATUS.DENIED ? 'DENIED' : status === FACTORY_STATUS.UNKNOWN ? 'UNKNOWN' : status;
 }
 
+function receiptKey(receiptId) {
+  return `factory/receipt/${requiredString(receiptId, 'receiptId')}`;
+}
+
 export function createFactoryRuntime({
   clock = () => new Date().toISOString(),
   idFactory = () => crypto.randomUUID(),
   sourceSha = 'UNKNOWN',
   domainHandlers = {},
+  recordStore,
 } = {}) {
-  const receipts = new Map();
+  const store = assertDurableStore(recordStore);
   const pixie = createPixie({ clock, idFactory, handlers: domainHandlers });
 
   function health() {
@@ -33,6 +39,7 @@ export function createFactoryRuntime({
       status: sourceSha === 'UNKNOWN' ? FACTORY_STATUS.UNKNOWN : FACTORY_STATUS.READY,
       sourceSha,
       runtimeSha: sourceSha,
+      storage: { status: 'READY', durability: 'ADAPTER' },
       observedAt,
     };
   }
@@ -77,15 +84,16 @@ export function createFactoryRuntime({
       observedAt: clock(),
       reason,
     };
-    receipts.set(receiptId, Object.freeze({ receipt, readback, pixieResult, handoff }));
+    await store.put(receiptKey(receiptId), { kind: 'FACTORY_RECEIPT_RECORD', receipt, readback, pixieResult, handoff }, { expectedVersion: 0 });
+    await store.append('factory/receipt-events', { receiptId, workId: handoff.workId, status, evidenceRef, observedAt: readback.observedAt });
     return Object.freeze({ receipt, readback, pixie: pixieResult });
   }
 
-  function readback(receiptId) {
+  async function readback(receiptId) {
     const id = requiredString(receiptId, 'receiptId');
-    const record = receipts.get(id);
+    const record = await store.get(receiptKey(id));
     if (!record) return { status: FACTORY_STATUS.UNKNOWN, boundaryVerified: false, verificationScope: null, domainCompleted: false, receiptId: id, reason: 'RECEIPT_NOT_FOUND' };
-    return record.readback;
+    return record.value.readback;
   }
 
   return Object.freeze({ health, receive, readback });
