@@ -1,0 +1,10 @@
+{
+  "name": "factory-district",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check src/contract.mjs && node --check src/pixie.mjs && node --check src/factory-runtime.mjs && node --check src/worker.mjs"
+  }
+}
