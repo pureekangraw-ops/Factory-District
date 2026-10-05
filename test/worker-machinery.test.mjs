@@ -19,7 +19,7 @@ test('Worker runs PIXIE machinery and persists its correlated output for readbac
   let received;
   const worker = createFactoryWorker({ SOURCE_SHA: 'sha-1' }, { recordStore: store(), domainRunners: { CODE: async ({ work, actorRef }) => {
     received = { work, actorRef };
-    return { run: { workId: work.workId, checkpointId: work.checkpointId, executionState: 'COMPLETE', returnState: 'RETURNED', evidenceRefs: ['evidence://machine-1'] }, output: { artifactRef: 'artifact://machine-1' } };
+    return { run: { workId: work.workId, checkpointId: 'CP-05', executionState: 'COMPLETE', returnState: 'RETURNED', verificationRef: 'verification-1', returnRef: 'return-1', evidenceRefs: ['evidence://machine-1'] }, output: { artifactRef: 'artifact://machine-1' } };
   } } });
   const body = await (await worker.fetch(request())).json();
   assert.equal(received.actorRef, 'PIXIE');
@@ -29,9 +29,9 @@ test('Worker runs PIXIE machinery and persists its correlated output for readbac
   assert.equal(persisted.machineResult.output.artifactRef, 'artifact://machine-1');
   assert.equal(persisted.machineResult.run.workId, handoff.workId);
 });
-for (const patch of [{ workId: 'OTHER' }, { returnState: 'PENDING' }, { evidenceRefs: [] }]) {
+for (const patch of [{ workId: 'OTHER' }, { returnState: 'PENDING' }, { evidenceRefs: [] }, { verificationRef: null }, { returnRef: null }]) {
   test(`Worker does not complete unverifiable machinery ${JSON.stringify(patch)}`, async () => {
-    const worker = createFactoryWorker({ SOURCE_SHA: 'sha-1' }, { recordStore: store(), domainRunners: { CODE: async () => ({ run: { workId: handoff.workId, checkpointId: handoff.checkpointId, executionState: 'COMPLETE', returnState: 'RETURNED', evidenceRefs: ['evidence://1'], ...patch } }) } });
+    const worker = createFactoryWorker({ SOURCE_SHA: 'sha-1' }, { recordStore: store(), domainRunners: { CODE: async () => ({ run: { workId: handoff.workId, checkpointId: 'CP-05', executionState: 'COMPLETE', returnState: 'RETURNED', verificationRef: 'verification-1', returnRef: 'return-1', evidenceRefs: ['evidence://1'], ...patch } }) } });
     const body = await (await worker.fetch(request())).json();
     assert.equal(body.readback.domainCompleted, false);
     assert.equal(body.receipt.status, 'UNKNOWN');

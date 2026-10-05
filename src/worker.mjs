@@ -16,7 +16,9 @@ function defaultHandlers(domainRunners) {
     const result = execution.result;
     const run = result?.run;
     const verified = execution.status === 'RETURNED' && run?.workId === handoff.workId
-      && Array.isArray(run.evidenceRefs) && run.evidenceRefs.length > 0;
+      && Boolean(run.verificationRef) && Boolean(run.returnRef)
+      && Array.isArray(run.evidenceRefs) && run.evidenceRefs.length > 0
+      && run.evidenceRefs.every(ref => typeof ref === 'string' && ref.trim());
     return { status: verified ? 'RETURNED' : 'UNKNOWN', reason: verified ? null : 'MACHINE_RESULT_UNVERIFIED', completed: Boolean(verified), machineResult: result || null, execution };
   }]));
 }
