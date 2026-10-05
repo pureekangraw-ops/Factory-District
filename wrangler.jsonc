@@ -4,5 +4,6 @@
   "main": "src/worker.mjs",
   "compatibility_date": "2026-10-05",
   "r2_buckets": [{ "binding": "RECORD_STORE", "bucket_name": "factory" }],
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "observability": { "enabled": true }
 }
