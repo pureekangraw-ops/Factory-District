@@ -9,7 +9,7 @@ embeds the checked-out Git commit from `WORKERS_CI_COMMIT_SHA`, `GITHUB_SHA`, or
 `git rev-parse HEAD`. A Cloudflare version UUID is not a source commit.
 
 `createFactoryWorker(env, { recordStore, domainRunners })` routes registered
-CODE/VISUAL/LOGIC runners through the existing PIXIE operator. Completed work
+CODE/VISUAL/LOGIC runners through the existing DWARF operator. Completed work
 must preserve Work identity, return successfully, and carry machine evidence.
 Machine output is persisted with the receipt and returned by Station readback.
 
@@ -22,14 +22,14 @@ acceptance.
 
 ## Current execution layers
 
-1. Factory Station → Hall → PIXIE foundation
+1. Factory Station → Hall → DWARF foundation
 2. Universal Machine Foundation
 3. Durable Run / Evidence boundary
 4. CODE Machinery foundation
 5. VISUAL Machinery foundation
 6. LOGIC Workspace + Health/Golden/Tracking
 7. Bilateral Rail Link + Factory E2E
-8. PIXIE Autonomous Lifecycle
+8. DWARF Autonomous Lifecycle
 9. Production Integration Foundation
 
 ## Production Integration Foundation
@@ -41,7 +41,7 @@ Provider Port
   → capability evidence
   → Bilateral Rail
   → Factory Station
-  → PIXIE / Machine
+  → DWARF / Machine
   → receipt/readback
   → source SHA
   → deployment

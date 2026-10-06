@@ -72,5 +72,5 @@ test('boundary handoff evidence remains distinct from domain completion', async 
   assert.equal(result.receipt.domainCompleted, false);
   assert.equal(result.readback.verificationScope, 'BOUNDARY_HANDOFF');
   assert.equal(result.readback.domainCompleted, false);
-  assert.equal(result.pixie.result.completed, false);
+  assert.equal(result.dwarf.result.completed, false);
 });

@@ -34,7 +34,7 @@ function checkSha(result, expectedSha, step) {
   if (result?.sourceSha && result.sourceSha !== expectedSha) throw new CodeMachineError(`${step}_SOURCE_SHA_MISMATCH`, FAILURE_CLASS.VERSION_MISMATCH, 'BLOCKED');
 }
 
-export async function runCodeMachine({ kernel, adapter, work, actorRef = 'PIXIE' } = {}) {
+export async function runCodeMachine({ kernel, adapter, work, actorRef = 'DWARF' } = {}) {
   assertCodeAdapter(adapter);
   if (!kernel || typeof kernel.receive !== 'function') throw new TypeError('kernel_REQUIRED');
   const steps = [];

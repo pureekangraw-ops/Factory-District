@@ -18,11 +18,11 @@ test('handoff targets Factory Station and Factory Hall, not an internal backend'
   assert.equal(Object.hasOwn(handoff, 'token'), false);
 });
 
-test('direct PIXIE or backend targets are rejected', () => {
+test('direct Postal or backend targets are rejected', () => {
   assert.throws(() => createHandoff({
     workId: 'WORK-1', checkpointId: 'CP-1',
     source: { stationId: 'S', system: 'METROPOLIS' },
-    target: { stationId: 'PIXIE', system: 'FACTORY', component: 'PIXIE' },
+    target: { stationId: 'POST_OFFICE', system: 'FACTORY', component: 'POST_OFFICE' },
     ownerDomain: 'CODE', intent: 'IMPLEMENT', scope: ['EXECUTE:CODE'], requestedAt: 'now',
   }), /TARGET_MUST_BE_FACTORY_STATION/);
 });
