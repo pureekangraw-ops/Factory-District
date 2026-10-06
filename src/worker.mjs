@@ -2,10 +2,9 @@ import { createR2RecordStore } from './r2-record-store.mjs';
 import { createFactoryRuntime } from './factory-runtime.mjs';
 import { createPixieOperator } from './pixie-autonomous.mjs';
 import { BUILD_SOURCE_SHA } from './build-source-identity.mjs';
+import { createProductionRunners } from './production-runners.mjs';
 
-function json(body, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8' } });
-}
+function json(body, status = 200) { return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8' } }); }
 
 function defaultHandlers(domainRunners) {
   const operator = createPixieOperator({ domainRunners });
@@ -23,12 +22,12 @@ function defaultHandlers(domainRunners) {
   }]));
 }
 
-export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} } = {}) {
+export function createFactoryWorker(env = {}, { recordStore, domainRunners = {}, domainReadiness = {} } = {}) {
   const runtime = recordStore ? createFactoryRuntime({ sourceSha: env.SOURCE_SHA || env.COMMIT_SHA || 'UNKNOWN', domainHandlers: defaultHandlers(domainRunners), recordStore }) : null;
   return Object.freeze({
     async fetch(request) {
       const url = new URL(request.url);
-      if (request.method === 'GET' && url.pathname === '/health') return json(runtime ? { ...runtime.health(), machinery: Object.fromEntries(['CODE', 'VISUAL', 'LOGIC'].map(domain => [domain, { status: typeof domainRunners[domain] === 'function' ? 'READY' : 'UNKNOWN', reason: typeof domainRunners[domain] === 'function' ? null : 'MACHINE_NOT_REGISTERED' }])) } : { service: 'factory-district', status: 'UNKNOWN', storage: { status: 'UNKNOWN', reason: 'DURABLE_STORAGE_NOT_CONFIGURED' } });
+      if (request.method === 'GET' && url.pathname === '/health') return json(runtime ? { ...runtime.health(), machinery: Object.fromEntries(['CODE', 'VISUAL', 'LOGIC'].map(domain => [domain, domainReadiness[domain] || { status: typeof domainRunners[domain] === 'function' ? 'UNKNOWN' : 'UNKNOWN', reason: typeof domainRunners[domain] === 'function' ? 'RUNNER_HEALTH_NOT_PROBED' : 'MACHINE_NOT_REGISTERED' }])) } : { service: 'factory-district', status: 'UNKNOWN', storage: { status: 'UNKNOWN', reason: 'DURABLE_STORAGE_NOT_CONFIGURED' } });
       if (request.method === 'POST' && url.pathname === '/station/receive') {
         if (!runtime) return json({ status: 'UNKNOWN', reason: 'DURABLE_STORAGE_NOT_CONFIGURED' }, 503);
         try {
@@ -54,6 +53,7 @@ export default {
   fetch(request, env) {
     const recordStore = env.RECORD_STORE ? createR2RecordStore(env.RECORD_STORE) : undefined;
     const runtimeEnv = { ...env, SOURCE_SHA: BUILD_SOURCE_SHA !== 'UNKNOWN' ? BUILD_SOURCE_SHA : env.SOURCE_SHA || 'UNKNOWN' };
-    return createFactoryWorker(runtimeEnv, { recordStore }).fetch(request);
+    const production = createProductionRunners(runtimeEnv);
+    return createFactoryWorker(runtimeEnv, { recordStore, domainRunners: production.runners, domainReadiness: production.readiness }).fetch(request);
   },
 };
