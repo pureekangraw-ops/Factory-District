@@ -5,7 +5,7 @@ import {
   FACTORY_STATION_ID,
   FACTORY_VERIFICATION_SCOPE,
 } from './contract.mjs';
-import { createPixie } from './pixie.mjs';
+import { createDwarf } from './dwarf.mjs';
 import { assertDurableStore } from './durable-store.mjs';
 
 function requiredString(value, name) {
@@ -29,7 +29,7 @@ export function createFactoryRuntime({
   recordStore,
 } = {}) {
   const store = assertDurableStore(recordStore);
-  const pixie = createPixie({ clock, idFactory, handlers: domainHandlers });
+  const dwarf = createDwarf({ clock, idFactory, handlers: domainHandlers });
 
   function health() {
     const observedAt = clock();
@@ -54,19 +54,19 @@ export function createFactoryRuntime({
     let verificationScope = null;
     let domainCompleted = false;
     let reason = null;
-    let pixieResult = null;
+    let dwarfResult = null;
 
     if (handoff.expectedSourceSha && handoff.expectedSourceSha !== sourceSha) {
       status = FACTORY_STATUS.UNKNOWN;
       reason = 'SHA_MISMATCH';
     } else {
-      pixieResult = await pixie.execute(handoff, { sourceSha });
-      status = statusCode(pixieResult.status);
-      reason = pixieResult.reason || null;
-      outcome = pixieResult.status === FACTORY_STATUS.HANDOFF_VERIFIED ? FACTORY_STATUS.HANDOFF_VERIFIED : null;
-      evidenceRef = pixieResult.evidence?.evidenceRef || null;
-      verificationScope = pixieResult.verificationScope || null;
-      domainCompleted = pixieResult.domainCompleted === true;
+      dwarfResult = await dwarf.execute(handoff, { sourceSha });
+      status = statusCode(dwarfResult.status);
+      reason = dwarfResult.reason || null;
+      outcome = dwarfResult.status === FACTORY_STATUS.HANDOFF_VERIFIED ? FACTORY_STATUS.HANDOFF_VERIFIED : null;
+      evidenceRef = dwarfResult.evidence?.evidenceRef || null;
+      verificationScope = dwarfResult.verificationScope || null;
+      domainCompleted = dwarfResult.domainCompleted === true;
     }
 
     const receipt = createReceipt({ receiptId, handoff, status, acceptedAt, outcome, evidenceRef, verificationScope, domainCompleted, reason });
@@ -81,13 +81,13 @@ export function createFactoryRuntime({
       domainCompleted,
       evidenceRef,
       sourceSha,
-      machineResult: pixieResult?.result?.machineResult || null,
+      machineResult: dwarfResult?.result?.machineResult || null,
       observedAt: clock(),
       reason,
     };
-    await store.put(receiptKey(receiptId), { kind: 'FACTORY_RECEIPT_RECORD', receipt, readback, pixieResult, handoff }, { expectedVersion: 0 });
+    await store.put(receiptKey(receiptId), { kind: 'FACTORY_RECEIPT_RECORD', receipt, readback, dwarfResult, handoff }, { expectedVersion: 0 });
     await store.append('factory/receipt-events', { receiptId, workId: handoff.workId, status, evidenceRef, observedAt: readback.observedAt });
-    return Object.freeze({ receipt, readback, pixie: pixieResult });
+    return Object.freeze({ receipt, readback, dwarf: dwarfResult });
   }
 
   async function readback(receiptId) {

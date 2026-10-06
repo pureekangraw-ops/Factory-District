@@ -6,7 +6,7 @@ function endpointFor(env, domain) {
 }
 
 function createHttpRunner(url, fetchImpl) {
-  return async ({ work, actorRef = 'PIXIE' } = {}) => {
+  return async ({ work, actorRef = 'DWARF' } = {}) => {
     const response = await fetchImpl(`${url}/execute`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

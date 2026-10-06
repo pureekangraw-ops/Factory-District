@@ -24,7 +24,7 @@ function requirePass(result, step) {
   return result;
 }
 
-export async function runVisualMachine({ kernel, adapter, work, actorRef = 'PIXIE' } = {}) {
+export async function runVisualMachine({ kernel, adapter, work, actorRef = 'DWARF' } = {}) {
   assertVisualAdapter(adapter);
   if (!kernel || typeof kernel.receive !== 'function') throw new TypeError('kernel_REQUIRED');
   const steps = [];

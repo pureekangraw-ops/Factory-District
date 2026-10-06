@@ -11,7 +11,7 @@ function evidenceFor(step, result) {
 }
 function requirePass(result, step) { if (!result || ![LOGIC_STATUS.PASS, LOGIC_STATUS.READY, 'SUCCESS', 'VERIFIED', 'ACCEPTED'].includes(result.status)) throw new LogicMachineError(`${step}_NOT_PASSED`, step === LOGIC_STEP.EVALUATION ? FAILURE_CLASS.VERIFICATION_FAILED : FAILURE_CLASS.EXECUTION_ERROR); return result; }
 
-export async function runLogicMachine({ kernel, adapter, work, actorRef = 'PIXIE' } = {}) {
+export async function runLogicMachine({ kernel, adapter, work, actorRef = 'DWARF' } = {}) {
   assertLogicAdapter(adapter);
   if (!kernel || typeof kernel.receive !== 'function') throw new TypeError('kernel_REQUIRED');
   const steps = [];
