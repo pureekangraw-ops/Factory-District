@@ -15,14 +15,14 @@ test('production execution without a machine runner is UNKNOWN, not a verified s
   assert.equal(body.receipt.status, 'UNKNOWN');
   assert.equal(body.receipt.reason, 'MACHINE_NOT_REGISTERED');
 });
-test('Worker runs PIXIE machinery and persists its correlated output for readback', async () => {
+test('Worker runs DWARF machinery and persists its correlated output for readback', async () => {
   let received;
   const worker = createFactoryWorker({ SOURCE_SHA: 'sha-1' }, { recordStore: store(), domainRunners: { CODE: async ({ work, actorRef }) => {
     received = { work, actorRef };
     return { run: { workId: work.workId, checkpointId: 'CP-05', executionState: 'COMPLETE', returnState: 'RETURNED', verificationRef: 'verification-1', returnRef: 'return-1', evidenceRefs: ['evidence://machine-1'] }, output: { artifactRef: 'artifact://machine-1' } };
   } } });
   const body = await (await worker.fetch(request())).json();
-  assert.equal(received.actorRef, 'PIXIE');
+  assert.equal(received.actorRef, 'DWARF');
   assert.equal(received.work.workId, handoff.workId);
   assert.equal(body.readback.domainCompleted, true);
   const persisted = await (await worker.fetch(new Request(`https://factory.example/station/readback/${body.receipt.receiptId}`))).json();
