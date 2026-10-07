@@ -3,6 +3,7 @@ import { createFactoryRuntime } from './factory-runtime.mjs';
 import { createPixieOperator } from './pixie-autonomous.mjs';
 import { BUILD_SOURCE_SHA } from './build-source-identity.mjs';
 import { authenticateRailRequest, railTransportHealth } from './rail-auth.mjs';
+import { createDwarfLogicTraineeRunner } from './dwarf-logic-trainee.mjs';
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8' } });
@@ -95,6 +96,7 @@ export default {
   fetch(request, env) {
     const recordStore = env.RECORD_STORE ? createR2RecordStore(env.RECORD_STORE) : undefined;
     const runtimeEnv = { ...env, SOURCE_SHA: BUILD_SOURCE_SHA !== 'UNKNOWN' ? BUILD_SOURCE_SHA : env.SOURCE_SHA || 'UNKNOWN' };
-    return createFactoryWorker(runtimeEnv, { recordStore }).fetch(request);
+    const domainRunners = recordStore ? { LOGIC: createDwarfLogicTraineeRunner({ store: recordStore }) } : {};
+    return createFactoryWorker(runtimeEnv, { recordStore, domainRunners }).fetch(request);
   },
 };
