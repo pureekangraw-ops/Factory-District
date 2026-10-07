@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/contract.mjs && node --check src/pixie.mjs && node --check src/factory-runtime.mjs && node --check src/worker.mjs && node --check src/machine-contract.mjs && node --check src/machine-state.mjs && node --check src/persistence.mjs && node --check src/machine-kernel.mjs && node --check src/durable-store.mjs && node --check src/code-contract.mjs && node --check src/code-adapters.mjs && node --check src/code-machine.mjs && node --check src/visual-contract.mjs && node --check src/visual-adapters.mjs && node --check src/visual-machine.mjs && node --check src/logic-contract.mjs && node --check src/logic-adapters.mjs && node --check src/logic-registry.mjs && node --check src/logic-machine.mjs && node --check src/rail-link.mjs && node --check src/pixie-autonomous.mjs && node --check src/factory-e2e.mjs && node --check src/provider-port.mjs && node --check src/deployment-binding.mjs && node --check src/production-integration.mjs",
-    "deploy:dry": "wrangler deploy --dry-run"
+    "check": "node --check src/contract.mjs && node --check src/pixie.mjs && node --check src/factory-runtime.mjs && node --check src/worker.mjs && node --check src/machine-contract.mjs && node --check src/machine-state.mjs && node --check src/persistence.mjs && node --check src/machine-kernel.mjs && node --check src/durable-store.mjs && node --check src/code-contract.mjs && node --check src/code-adapters.mjs && node --check src/code-machine.mjs && node --check src/visual-contract.mjs && node --check src/visual-adapters.mjs && node --check src/visual-machine.mjs && node --check src/logic-contract.mjs && node --check src/logic-adapters.mjs && node --check src/logic-registry.mjs && node --check src/logic-machine.mjs && node --check src/rail-link.mjs && node --check src/pixie-autonomous.mjs && node --check src/factory-e2e.mjs && node --check src/provider-port.mjs && node --check src/deployment-binding.mjs && node --check src/production-integration.mjs && node --check crew-app/bridge.mjs && node --check crew-app/service.mjs && node --check crew-app/serve.mjs && node --check crew-app/app.mjs",
+    "deploy:dry": "wrangler deploy --dry-run",
+    "crew:serve": "node crew-app/serve.mjs"
   },
   "devDependencies": {
     "wrangler": "4.147.0"
