@@ -74,6 +74,7 @@ export function createFactoryRuntime({
       receiptId,
       workId: handoff.workId,
       checkpointId: handoff.checkpointId,
+      workPassRef: handoff.workPassRef,
       stationId: FACTORY_STATION_ID,
       status,
       boundaryVerified: status === FACTORY_STATUS.HANDOFF_VERIFIED && verificationScope === FACTORY_VERIFICATION_SCOPE.BOUNDARY_HANDOFF && Boolean(evidenceRef),
@@ -86,7 +87,7 @@ export function createFactoryRuntime({
       reason,
     };
     await store.put(receiptKey(receiptId), { kind: 'FACTORY_RECEIPT_RECORD', receipt, readback, pixieResult, handoff }, { expectedVersion: 0 });
-    await store.append('factory/receipt-events', { receiptId, workId: handoff.workId, status, evidenceRef, observedAt: readback.observedAt });
+    await store.append('factory/receipt-events', { receiptId, workId: handoff.workId, workPassRef: handoff.workPassRef, status, evidenceRef, observedAt: readback.observedAt });
     return Object.freeze({ receipt, readback, pixie: pixieResult });
   }
 
