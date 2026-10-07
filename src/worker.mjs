@@ -24,6 +24,10 @@ function defaultHandlers(domainRunners) {
   }]));
 }
 
+function logRailReject({ phase, reason }) {
+  console.warn('FACTORY_RAIL_REJECT', JSON.stringify({ phase, reason }));
+}
+
 export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} } = {}) {
   const runtime = recordStore ? createFactoryRuntime({ sourceSha: env.SOURCE_SHA || env.COMMIT_SHA || 'UNKNOWN', domainHandlers: defaultHandlers(domainRunners), recordStore }) : null;
   const transport = railTransportHealth(env);
@@ -54,7 +58,10 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
         if (!runtime) return json({ status: 'UNKNOWN', reason: 'DURABLE_STORAGE_NOT_CONFIGURED' }, 503);
 
         const authenticated = await authenticateRailRequest(request, env);
-        if (!authenticated.ok) return json({ status: 'DENIED', reason: authenticated.reason }, authenticated.status);
+        if (!authenticated.ok) {
+          logRailReject({ phase: 'receive', reason: authenticated.reason });
+          return json({ status: 'DENIED', reason: authenticated.reason }, authenticated.status);
+        }
 
         try {
           const result = await runtime.receive(JSON.parse(authenticated.body));
@@ -69,7 +76,10 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
         if (!runtime) return json({ status: 'UNKNOWN', reason: 'DURABLE_STORAGE_NOT_CONFIGURED' }, 503);
 
         const authenticated = await authenticateRailRequest(request, env);
-        if (!authenticated.ok) return json({ status: 'DENIED', reason: authenticated.reason }, authenticated.status);
+        if (!authenticated.ok) {
+          logRailReject({ phase: 'readback', reason: authenticated.reason });
+          return json({ status: 'DENIED', reason: authenticated.reason }, authenticated.status);
+        }
 
         const receiptId = decodeURIComponent(url.pathname.slice('/station/readback/'.length));
         const result = await runtime.readback(receiptId);
