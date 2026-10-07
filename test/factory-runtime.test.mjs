@@ -61,6 +61,7 @@ test('health exposes exact source/runtime SHA and durable storage adapter', () =
   assert.equal(health.sourceSha, 'abc123');
   assert.equal(health.runtimeSha, 'abc123');
   assert.deepEqual(health.storage, { status: 'READY', durability: 'ADAPTER' });
+  assert.equal(health.transport.status, 'READY');
 });
 
 test('CODE, VISUAL and LOGIC use durable receipt/readback storage', async () => {
@@ -180,4 +181,35 @@ test('boundary handoff evidence remains distinct from domain completion', async 
   assert.equal(result.readback.verificationScope, 'BOUNDARY_HANDOFF');
   assert.equal(result.readback.domainCompleted, false);
   assert.equal(result.pixie.result.completed, false);
+});
+
+
+test('completed owner-domain work exposes a correlated verified return projection', async () => {
+  const factory = runtime({
+    domainHandlers: {
+      CODE: async () => ({
+        status: 'RETURNED',
+        completed: true,
+        machineResult: {
+          run: {
+            resultRefs: ['artifact://result-1'],
+            evidenceRefs: ['evidence://machine-1'],
+          },
+        },
+      }),
+    },
+  });
+  const input = base('CODE');
+  const completed = await factory.receive(input);
+  assert.equal(completed.readback.domainCompleted, true);
+  assert.equal(completed.readback.domainVerified, true);
+  assert.equal(completed.readback.result.workId, input.workId);
+  assert.equal(completed.readback.result.checkpointId, input.checkpointId);
+  assert.equal(completed.readback.result.workPassRef, input.workPassRef);
+  assert.deepEqual(completed.readback.result.artifactRefs, ['artifact://result-1']);
+  assert.deepEqual(completed.readback.result.evidenceRefs, ['evidence://machine-1']);
+
+  const persisted = await factory.readback(completed.receipt.receiptId);
+  assert.equal(persisted.domainVerified, true);
+  assert.equal(persisted.result.workPassRef, input.workPassRef);
 });

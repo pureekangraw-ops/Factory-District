@@ -40,6 +40,7 @@ export function createFactoryRuntime({
       sourceSha,
       runtimeSha: sourceSha,
       storage: { status: 'READY', durability: 'ADAPTER' },
+      transport: { status: 'READY', kind: 'HTTP', receivePath: '/station/receive', readbackPath: '/station/readback/:receiptId' },
       observedAt,
     };
   }
@@ -70,6 +71,22 @@ export function createFactoryRuntime({
     }
 
     const receipt = createReceipt({ receiptId, handoff, status, acceptedAt, outcome, evidenceRef, verificationScope, domainCompleted, reason });
+    const boundaryVerified = status === FACTORY_STATUS.HANDOFF_VERIFIED
+      && verificationScope === FACTORY_VERIFICATION_SCOPE.BOUNDARY_HANDOFF
+      && Boolean(evidenceRef);
+    const machineResult = pixieResult?.result?.machineResult || null;
+    const resultRefs = Array.isArray(machineResult?.run?.resultRefs) ? machineResult.run.resultRefs.filter(Boolean) : [];
+    const machineEvidenceRefs = Array.isArray(machineResult?.run?.evidenceRefs) ? machineResult.run.evidenceRefs.filter(Boolean) : [];
+    const domainVerified = domainCompleted === true;
+    const result = domainVerified ? {
+      workId: handoff.workId,
+      checkpointId: handoff.checkpointId,
+      workPassRef: handoff.workPassRef,
+      ownerDomain: handoff.ownerDomain,
+      resultRefs,
+      artifactRefs: resultRefs,
+      evidenceRefs: machineEvidenceRefs,
+    } : null;
     const readback = {
       receiptId,
       workId: handoff.workId,
@@ -77,12 +94,14 @@ export function createFactoryRuntime({
       workPassRef: handoff.workPassRef,
       stationId: FACTORY_STATION_ID,
       status,
-      boundaryVerified: status === FACTORY_STATUS.HANDOFF_VERIFIED && verificationScope === FACTORY_VERIFICATION_SCOPE.BOUNDARY_HANDOFF && Boolean(evidenceRef),
+      boundaryVerified,
       verificationScope,
       domainCompleted,
+      domainVerified,
+      result,
       evidenceRef,
       sourceSha,
-      machineResult: pixieResult?.result?.machineResult || null,
+      machineResult,
       observedAt: clock(),
       reason,
     };
@@ -94,7 +113,7 @@ export function createFactoryRuntime({
   async function readback(receiptId) {
     const id = requiredString(receiptId, 'receiptId');
     const record = await store.get(receiptKey(id));
-    if (!record) return { status: FACTORY_STATUS.UNKNOWN, boundaryVerified: false, verificationScope: null, domainCompleted: false, receiptId: id, reason: 'RECEIPT_NOT_FOUND' };
+    if (!record) return { status: FACTORY_STATUS.UNKNOWN, boundaryVerified: false, verificationScope: null, domainCompleted: false, domainVerified: false, result: null, receiptId: id, reason: 'RECEIPT_NOT_FOUND' };
     return record.value.readback;
   }
 

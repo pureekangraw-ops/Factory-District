@@ -35,7 +35,9 @@ test('Worker exposes health, receive and readback with durable adapter', async (
   const worker = createFactoryWorker({ SOURCE_SHA: 'worker-sha-1' }, { recordStore });
   const health = await worker.fetch(new Request('https://factory.example/health'));
   assert.equal(health.status, 200);
-  assert.equal((await health.json()).storage.status, 'READY');
+  const healthBody = await health.json();
+  assert.equal(healthBody.storage.status, 'READY');
+  assert.equal(healthBody.transport.status, 'READY');
 
   const input = boundaryHandoff();
   const receive = await worker.fetch(new Request('https://factory.example/station/receive', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) }));
