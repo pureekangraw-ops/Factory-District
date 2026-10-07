@@ -59,3 +59,23 @@ This phase defines the provider-neutral integration contract and tests. It does 
 npm test
 npm run check
 ```
+
+## PIXIE recovery boundaries
+
+PIXIE accepts an integer attempt budget from 1 through 10 (default 1). Thrown
+`AUTHORITY_DENIED`, an authority-boundary flag, or authority-denied failure class
+stops the cycle as BLOCKED, even when marked retryable. Other exceptions produce
+an UNKNOWN result with a stable error code rather than raw provider messages.
+Each attempt receives a fresh copy of the original Work payload, preserving
+caller state and preventing one attempt from contaminating the next.
+
+A completed returned machine result with conflicting Work, machine or domain
+identity stays UNKNOWN. Legacy runners that omit identity remain compatible;
+this check alone is not full owner identity/evidence verification. Retryable
+errors still require owner adapters to ensure replay is safe; this change does
+not add idempotency or automatic rollback.
+
+`test/pixie-recovery.test.mjs` covers these recovery drills alongside the existing
+operator tests. They test deterministic control logic, not model training or
+production execution. No provider credentials, machine registrations, merge or
+deployment are changed.
