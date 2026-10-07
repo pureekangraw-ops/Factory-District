@@ -7,6 +7,32 @@ import { railRequest } from './support/rail-auth.mjs';
 
 const RAIL_SECRET = 'test-rail-secret';
 
+function boundaryHandoff() {
+  const pass = {
+    kind: 'WORK_PASS',
+    version: 'WORK_PASS_V1',
+    passId: 'PASS:WORK-WORKER:CP-1',
+    workId: 'WORK-WORKER',
+    checkpointId: 'CP-1',
+    actor: 'GO',
+    status: 'ACTIVE',
+    permissions: { actions: ['read', 'handoff', 'return'], handoff: [{ stationId: 'FACTORY_STATION' }] },
+    authorityTransferred: false,
+  };
+  return {
+    workId: 'WORK-WORKER',
+    checkpointId: 'CP-1',
+    workPassRef: `work-pass://${pass.passId}`,
+    workPass: pass,
+    source: { stationId: 'METROPOLIS-STATION', system: 'METROPOLIS' },
+    target: { stationId: 'FACTORY-STATION', system: 'FACTORY', component: 'FACTORY_HALL' },
+    ownerDomain: 'CODE',
+    intent: 'LIVE_E2E_BOUNDARY_HANDOFF',
+    scope: ['EXECUTE:CODE'],
+    expectedSourceSha: 'worker-sha-1',
+  };
+}
+
 test('Worker exposes authenticated health, receive and readback with durable adapter', async () => {
   const recordStore = createDurableStore({ driver: createInMemoryDurableDriver() });
   const worker = createFactoryWorker({ SOURCE_SHA: 'worker-sha-1', METROPOLIS_FACTORY_RAIL_SECRET: RAIL_SECRET }, { recordStore });
@@ -17,7 +43,7 @@ test('Worker exposes authenticated health, receive and readback with durable ada
   assert.equal(healthBody.transport.status, 'READY');
   assert.equal(healthBody.transport.protocol, 'METROPOLIS_FACTORY_STATION_V2');
 
-  const payload = { workId: 'WORK-WORKER', checkpointId: 'CP-1', source: { stationId: 'METROPOLIS-STATION', system: 'METROPOLIS' }, target: { stationId: 'FACTORY-STATION', system: 'FACTORY', component: 'FACTORY_HALL' }, ownerDomain: 'CODE', intent: 'LIVE_E2E_BOUNDARY_HANDOFF', scope: ['EXECUTE:CODE'], expectedSourceSha: 'worker-sha-1' };
+  const payload = boundaryHandoff();
   const bodyText = JSON.stringify(payload);
   const receive = await worker.fetch(await railRequest('https://factory.example/station/receive', {
     method: 'POST',
@@ -29,10 +55,29 @@ test('Worker exposes authenticated health, receive and readback with durable ada
   const body = await receive.json();
   assert.equal(body.receipt.status, 'HANDOFF_VERIFIED');
   assert.equal(body.receipt.verificationScope, 'BOUNDARY_HANDOFF');
+  assert.equal(body.receipt.workPassRef, payload.workPassRef);
 
   const readback = await worker.fetch(await railRequest(`https://factory.example/station/readback/${body.receipt.receiptId}`, { secret: RAIL_SECRET }));
   assert.equal(readback.status, 200);
-  assert.equal((await readback.json()).boundaryVerified, true);
+  const readbackBody = await readback.json();
+  assert.equal(readbackBody.boundaryVerified, true);
+  assert.equal(readbackBody.workPassRef, payload.workPassRef);
+});
+
+test('Worker rejects invalid Work Pass before creating a receipt', async () => {
+  const recordStore = createDurableStore({ driver: createInMemoryDurableDriver() });
+  const worker = createFactoryWorker({ SOURCE_SHA: 'worker-sha-1', METROPOLIS_FACTORY_RAIL_SECRET: RAIL_SECRET }, { recordStore });
+  const payload = boundaryHandoff();
+  payload.workPass.status = 'CANCELLED';
+  const response = await worker.fetch(await railRequest('https://factory.example/station/receive', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    secret: RAIL_SECRET,
+    headers: { 'content-type': 'application/json' },
+  }));
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).reason, 'FACTORY_WORK_PASS_INACTIVE');
+  assert.equal((await recordStore.list('factory/receipt-events')).length, 0);
 });
 
 test('Worker rejects unsigned rail traffic when transport is configured', async () => {
