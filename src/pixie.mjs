@@ -7,18 +7,19 @@ function requiredString(value, name) {
 
 export function createPixie({ clock = () => new Date().toISOString(), idFactory = () => crypto.randomUUID(), handlers = {} } = {}) {
   async function execute(handoff, { sourceSha } = {}) {
+    const workPassRef = handoff.workPassRef;
     const domain = requiredString(handoff.ownerDomain, 'handoff.ownerDomain').toUpperCase();
-    if (!FACTORY_DOMAINS.includes(domain)) return { status: FACTORY_STATUS.UNKNOWN, reason: 'OWNER_DOMAIN_UNKNOWN' };
-    if (!handoff.scope.includes(`EXECUTE:${domain}`)) return { status: FACTORY_STATUS.DENIED, reason: 'SCOPE_NOT_GRANTED' };
+    if (!FACTORY_DOMAINS.includes(domain)) return { status: FACTORY_STATUS.UNKNOWN, reason: 'OWNER_DOMAIN_UNKNOWN', workPassRef };
+    if (!handoff.scope.includes(`EXECUTE:${domain}`)) return { status: FACTORY_STATUS.DENIED, reason: 'SCOPE_NOT_GRANTED', workPassRef };
     const handler = handlers[domain];
-    if (typeof handler !== 'function') return { status: FACTORY_STATUS.UNKNOWN, reason: 'DESTINATION_UNAVAILABLE' };
+    if (typeof handler !== 'function') return { status: FACTORY_STATUS.UNKNOWN, reason: 'DESTINATION_UNAVAILABLE', workPassRef };
     let result;
     try {
       result = await handler({ handoff, pixie: 'PIXIE' });
     } catch (error) {
-      return { status: FACTORY_STATUS.UNKNOWN, reason: 'DESTINATION_ERROR', error: error.code || error.message };
+      return { status: FACTORY_STATUS.UNKNOWN, reason: 'DESTINATION_ERROR', error: error.code || error.message, workPassRef };
     }
-    if (result?.status === 'UNKNOWN') return { status: FACTORY_STATUS.UNKNOWN, reason: result.reason || 'MACHINE_RESULT_UNVERIFIED', result, domainCompleted: false };
+    if (result?.status === 'UNKNOWN') return { status: FACTORY_STATUS.UNKNOWN, reason: result.reason || 'MACHINE_RESULT_UNVERIFIED', result, domainCompleted: false, workPassRef };
     const domainCompleted = result?.completed === true && result?.status === 'RETURNED';
     const evidenceRef = `evidence://factory/${encodeURIComponent(handoff.workId)}/${encodeURIComponent(handoff.checkpointId)}/${idFactory()}`;
     const observedAt = clock();
@@ -36,6 +37,7 @@ export function createPixie({ clock = () => new Date().toISOString(), idFactory 
       evidence,
       verificationScope: FACTORY_VERIFICATION_SCOPE.BOUNDARY_HANDOFF,
       domainCompleted,
+      workPassRef,
     };
   }
 
