@@ -98,7 +98,7 @@ test('Factory boundary rejects mismatched Checkpoint ID', async () => {
 });
 
 test('Factory boundary rejects wrong actor', async () => {
-  await assert.rejects(() => runtime().receive(base('CODE', { workPass: validPass('WORK-CODE', 'CP-1', { actor: 'LIGHT' }) })), /FACTORY_WORK_PASS_ACTOR_INVALID/);
+  await assert.rejects(() => runtime().receive(base('CODE', { workPass: validPass('WORK-CODE', 'CP-1', { actor: 'UNRECOGNIZED' }) })), /FACTORY_WORK_PASS_ACTOR_INVALID/);
 });
 
 test('Factory boundary rejects missing handoff permission', async () => {
@@ -212,4 +212,14 @@ test('completed owner-domain work exposes a correlated verified return projectio
   const persisted = await factory.readback(completed.receipt.receiptId);
   assert.equal(persisted.domainVerified, true);
   assert.equal(persisted.result.workPassRef, input.workPassRef);
+});
+
+
+test('authorized LIGHT Work Pass is accepted without borrowing GO identity', async () => {
+  const input = base('LOGIC', { workPass: validPass('WORK-LOGIC', 'CP-1', { actor: 'LIGHT' }) });
+  const result = await runtime().receive(input);
+  assert.equal(result.receipt.status, 'HANDOFF_VERIFIED');
+  assert.equal(result.dwarf.workPassRef, input.workPassRef);
+  assert.equal(result.dwarf.evidence.details.operator, 'DWARF-01');
+  assert.equal(result.readback.mainRunner, 'DWARF-01');
 });
