@@ -51,7 +51,7 @@ export function validateWorkPass({ workPass, workPassRef, workId, checkpointId }
     rejectWorkPass('FACTORY_WORK_PASS_VERSION_INVALID');
   }
   if (text(workPass.status) !== 'ACTIVE') rejectWorkPass('FACTORY_WORK_PASS_INACTIVE');
-  if (text(workPass.actor) !== 'GO') rejectWorkPass('FACTORY_WORK_PASS_ACTOR_INVALID');
+  if (!['GO', 'LIGHT'].includes(text(workPass.actor))) rejectWorkPass('FACTORY_WORK_PASS_ACTOR_INVALID');
 
   if (text(workPass.workId) !== text(workId) || text(workPass.checkpointId) !== text(checkpointId)) {
     rejectWorkPass('FACTORY_WORK_PASS_SCOPE_MISMATCH');
@@ -74,7 +74,7 @@ export function validateWorkPass({ workPass, workPassRef, workId, checkpointId }
   return Object.freeze({
     workPassRef: ref,
     passId,
-    actor: 'GO',
+    actor: text(workPass.actor),
     destinationId: FACTORY_WORK_PASS_DESTINATION_ID,
     validated: true,
   });
