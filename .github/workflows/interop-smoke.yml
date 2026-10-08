@@ -1,0 +1,36 @@
+name: Metropolis-Factory interoperability (offline)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/interop-smoke.yml'
+      - 'scripts/interop-smoke.mjs'
+      - 'src/**'
+      - 'test/support/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signed-receiver-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout Factory-District from PR
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout pinned Metropolis sender source
+        uses: actions/checkout@v4
+        with:
+          repository: pureekangraw-ops/Metropolis
+          ref: 0a3f04ee0f1c70f72bf90e60063adb454f8b70d0
+          path: interop/metropolis
+          persist-credentials: false
+      - name: Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Signed Work Pass boundary and readback smoke
+        run: node scripts/interop-smoke.mjs
