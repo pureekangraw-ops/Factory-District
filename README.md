@@ -9,12 +9,14 @@ embeds the checked-out Git commit from `WORKERS_CI_COMMIT_SHA`, `GITHUB_SHA`, or
 `git rev-parse HEAD`. A Cloudflare version UUID is not a source commit.
 
 `createFactoryWorker(env, { recordStore, domainRunners })` routes registered
-CODE/VISUAL/LOGIC runners through the existing PIXIE operator. Completed work
+CODE/VISUAL/LOGIC runners through DWARF-01 as the sole Factory Main Runner. Completed work
 must preserve Work identity, return successfully, and carry machine evidence.
 Machine output is persisted with the receipt and returned by Station readback.
 
-Production provider runners are not registered in the default Worker entrypoint.
-Operational execution therefore returns `UNKNOWN / MACHINE_NOT_REGISTERED`.
+The current worker entrypoint registers the active DWARF LOGIC worker (pending
+qualification of current-system Golden Case replay). CODE and VISUAL provider
+runners remain unregistered, so they return `UNKNOWN / MACHINE_NOT_REGISTERED`.
+No simulated success is substituted for missing machinery.
 Health reports readiness separately for each domain. Only the explicit
 `LIVE_E2E_BOUNDARY_HANDOFF` intent exercises the boundary without executing a
 domain; its `domainCompleted` remains false. This is not production machinery
@@ -22,14 +24,14 @@ acceptance.
 
 ## Current execution layers
 
-1. Factory Station → Hall → PIXIE foundation
+1. Factory Station → Hall → DWARF main runner (PIXIE is Metropolis data circulation)
 2. Universal Machine Foundation
 3. Durable Run / Evidence boundary
 4. CODE Machinery foundation
 5. VISUAL Machinery foundation
 6. LOGIC Workspace + Health/Golden/Tracking
 7. Bilateral Rail Link + Factory E2E
-8. PIXIE Autonomous Lifecycle
+8. DWARF Autonomous Lifecycle
 9. Production Integration Foundation
 
 ## Production Integration Foundation
@@ -41,13 +43,22 @@ Provider Port
   → capability evidence
   → Bilateral Rail
   → Factory Station
-  → PIXIE / Machine
+  → DWARF / Machine
   → receipt/readback
   → source SHA
   → deployment
   → destination
   → runtime SHA + health
 ```
+
+The Factory runner accepts a valid GO or LIGHT Work Pass when the Work and
+Checkpoint identity, station grant, and authority boundaries match. A connected
+agent is not by itself authorized to execute a different Work.
+
+PIXIE rotates and reconciles data/report/evidence in Metropolis. Historical
+`pixie` response and `pixieResult` record fields are retained as read-only
+compatibility aliases while consumers migrate to `dwarf` / `dwarfResult`.
+These aliases do not execute machinery.
 
 A runtime is not verified merely because deployment returned an accepted response. Source SHA, deployment reference, destination and runtime readback must match. Any missing or mismatched evidence is `UNKNOWN`.
 
