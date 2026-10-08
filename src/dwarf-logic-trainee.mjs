@@ -1,4 +1,5 @@
 import { assertDurableStore } from './durable-store.mjs';
+import { importLegacyGoldenCases } from './legacy-golden-cases.mjs';
 
 export const DWARF_ID = 'DWARF-01';
 export const DWARF_LINEAGE = Object.freeze({
@@ -59,6 +60,28 @@ export function createDwarfLogicTraineeRunner({
           evidenceRefs: Object.freeze([]),
         }),
         failure: Object.freeze({ code: 'DWARF_LOGIC_DOMAIN_ONLY' }),
+      });
+    }
+
+    if (String(work?.intent || '').toUpperCase() === 'IMPORT_GOLDEN_CASES') {
+      const migration = await importLegacyGoldenCases({ store: durable, clock });
+      const observedAt = clock();
+      return Object.freeze({
+        ...runResult({
+          workId,
+          evidenceRef: migration.evidenceRef,
+          returnRef: `${migration.evidenceRef}#return`,
+          observedAt,
+        }),
+        migration,
+        authority: Object.freeze({
+          changeWork: false,
+          merge: false,
+          deploy: false,
+          acceptCurrent: false,
+          authorityTransferred: false,
+        }),
+        retryable: false,
       });
     }
 
