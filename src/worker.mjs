@@ -1,6 +1,6 @@
 import { createR2RecordStore } from './r2-record-store.mjs';
 import { createFactoryRuntime } from './factory-runtime.mjs';
-import { createPixieOperator } from './pixie-autonomous.mjs';
+import { createDwarfOperator } from './dwarf-autonomous.mjs';
 import { BUILD_SOURCE_SHA } from './build-source-identity.mjs';
 import { authenticateRailRequest, railTransportHealth } from './rail-auth.mjs';
 import { createDwarfLogicWorker } from './dwarf-logic-worker.mjs';
@@ -10,7 +10,7 @@ function json(body, status = 200) {
 }
 
 function defaultHandlers(domainRunners) {
-  const operator = createPixieOperator({ domainRunners });
+  const operator = createDwarfOperator({ domainRunners });
   return Object.fromEntries(['CODE', 'VISUAL', 'LOGIC'].map((domain) => [domain, async ({ handoff }) => {
     if (handoff.intent === 'LIVE_E2E_BOUNDARY_HANDOFF') return { ownerDomain: domain, status: 'RECEIVED', completed: false, workId: handoff.workId };
     if (typeof domainRunners[domain] !== 'function') return { status: 'UNKNOWN', reason: 'MACHINE_NOT_REGISTERED' };
@@ -41,6 +41,7 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
         return json(runtime
           ? {
               ...runtime.health(),
+              mainRunner: { id: 'DWARF-01', role: 'FACTORY_MAIN_RUNNER', domains: ['CODE', 'VISUAL', 'LOGIC'] },
               transport,
               machinery: Object.fromEntries(['CODE', 'VISUAL', 'LOGIC'].map(domain => [domain, {
                 status: typeof domainRunners[domain] === 'function' ? 'READY' : 'UNKNOWN',
