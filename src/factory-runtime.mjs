@@ -45,6 +45,30 @@ export function createFactoryRuntime({
     };
   }
 
+  // Read-only validation through the same contract used by receive().
+  // No Work is created, no receipt is issued, and no domain runner is invoked.
+  async function preflight(input = {}) {
+    const handoff = createHandoff({ ...input, requestedAt: input.requestedAt || clock() });
+    if (handoff.expectedSourceSha && handoff.expectedSourceSha !== sourceSha) {
+      const error = new Error('SHA_MISMATCH');
+      error.code = 'SHA_MISMATCH';
+      throw error;
+    }
+    return Object.freeze({
+      status: 'READY',
+      allowed: true,
+      workId: handoff.workId,
+      checkpointId: handoff.checkpointId,
+      workPassRef: handoff.workPassRef,
+      actingActor: handoff.actingActor,
+      authorizationSource: handoff.authorizationSource,
+      sourceSha,
+      operation: String(input.operation || ''),
+      validationScope: 'FACTORY_BOUNDARY_PREFLIGHT',
+      observedAt: clock(),
+    });
+  }
+
   async function receive(input = {}) {
     const handoff = createHandoff({ ...input, requestedAt: input.requestedAt || clock() });
     const receiptId = `receipt-${idFactory()}`;
@@ -121,5 +145,5 @@ export function createFactoryRuntime({
     return record.value.readback;
   }
 
-  return Object.freeze({ health, receive, readback });
+  return Object.freeze({ health, preflight, receive, readback });
 }
