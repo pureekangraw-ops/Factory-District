@@ -59,3 +59,36 @@ This phase defines the provider-neutral integration contract and tests. It does 
 npm test
 npm run check
 ```
+
+## Metropolis ↔ Factory: baseline actor authority
+
+The existing bilateral rail uses a timestamped **HMAC** request signature and
+a server-held shared secret. Do not add OAuth refresh tokens to this internal
+rail or place credentials inside handoff envelopes.
+
+Factory verifies a City-issued active Work Pass for the exact Work ID,
+Checkpoint ID, `handoff` action and `FACTORY_STATION` destination.
+It accepts **any nonempty actor identity** carried by a valid Work Pass;
+there is no GO-only allowlist in the Factory boundary.
+
+City Hall stamps `actingActor` from its authenticated caller *after* its
+normal authorization check. When the acting actor differs from the Work Pass
+holder, City Hall must provide `cityAuthorization` under the HMAC-authenticated
+rail request, describing an exact explicit Work grant (actor, Work ID,
+Checkpoint ID, pass reference, action, station and operation). Factory rejects
+absent, contradictory, wrong-scope or forged delegation claims.
+
+The signing secret authenticates the **City rail sender**, not an arbitrary
+Internet user. The city is the source of truth for who has which grant;
+Factory checks command integrity and the supplied scope, rather than adding
+another user permission system. New actors must first be onboarded and
+authenticated at Metropolis; a nonempty actor name alone never gives access.
+
+Receipts and readbacks preserve the actual `actingActor`, authorization
+source (`WORK_PASS` or `EXPLICIT_WORK_GRANT`), Work and Checkpoint
+correlation, and verification evidence. `BOUNDARY_HANDOFF` success is **not**
+proof of successful CODE/VISUAL/LOGIC production.
+
+The City must never pass through caller-supplied `actingActor` or
+`cityAuthorization`; both fields are stamped from server-side authorization.
+Old same-holder Work Pass traffic without `actingActor` stays compatible.
