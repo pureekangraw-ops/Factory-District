@@ -102,6 +102,43 @@ test('signed city rail accepts delegated LIGHT and rejects missing/mismatched ci
   assert.equal((await verified.json()).actingActor, 'LIGHT');
 });
 
+test('signed preflight checks actor and Work Pass without executing or issuing receipts', async () => {
+  const recordStore = createDurableStore({ driver: createInMemoryDurableDriver() });
+  const worker = createFactoryWorker({
+    SOURCE_SHA: 'worker-sha-1', METROPOLIS_FACTORY_RAIL_SECRET: RAIL_SECRET,
+  }, { recordStore });
+  const request = async payload => worker.fetch(await railRequest('https://factory.example/station/preflight', {
+    method: 'POST', body: JSON.stringify(payload),
+    secret: RAIL_SECRET, headers: { 'content-type': 'application/json' },
+  }));
+  const payload = { ...boundaryHandoff(), actingActor: 'GO', operation: 'FACTORY_HANDOFF' };
+  const accepted = await request(payload);
+  assert.equal(accepted.status, 200);
+  const proof = await accepted.json();
+  assert.equal(proof.allowed, true);
+  assert.equal(proof.actingActor, 'GO');
+  assert.equal(proof.workId, payload.workId);
+  assert.equal(proof.validationScope, 'FACTORY_BOUNDARY_PREFLIGHT');
+  assert.equal((await recordStore.list('factory/receipt-events')).length, 0);
+
+  const denied = await request({ ...payload, actingActor: 'LIGHT' });
+  assert.equal(denied.status, 403);
+  assert.equal((await denied.json()).reason, 'FACTORY_ACTOR_DELEGATION_REQUIRED');
+  assert.equal((await recordStore.list('factory/receipt-events')).length, 0);
+
+  const wrongSha = await request({ ...payload, expectedSourceSha: 'old-sha' });
+  assert.equal(wrongSha.status, 409);
+  assert.equal((await wrongSha.json()).reason, 'SHA_MISMATCH');
+  assert.equal((await recordStore.list('factory/receipt-events')).length, 0);
+
+  const unsigned = await worker.fetch(new Request('https://factory.example/station/preflight', {
+    method: 'POST', body: JSON.stringify(payload),
+  }));
+  assert.equal(unsigned.status, 400);
+  assert.equal((await unsigned.json()).reason, 'FACTORY_RAIL_PROTOCOL_INVALID');
+  assert.equal((await recordStore.list('factory/receipt-events')).length, 0);
+});
+
 test('Worker rejects invalid Work Pass before creating a receipt', async () => {
   const recordStore = createDurableStore({ driver: createInMemoryDurableDriver() });
   const worker = createFactoryWorker({ SOURCE_SHA: 'worker-sha-1', METROPOLIS_FACTORY_RAIL_SECRET: RAIL_SECRET }, { recordStore });
