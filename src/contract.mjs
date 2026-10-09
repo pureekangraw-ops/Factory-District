@@ -42,7 +42,7 @@ function rejectWorkPass(code) {
   throw error;
 }
 
-export function validateWorkPass({ workPass, workPassRef, workId, checkpointId } = {}) {
+export function validateWorkPass({ workPass, workPassRef, workId, checkpointId, actingActor, cityAuthorization, operation } = {}) {
   const ref = text(workPassRef);
   if (!ref) rejectWorkPass('FACTORY_WORK_PASS_REF_REQUIRED');
   if (!workPass || typeof workPass !== 'object' || Array.isArray(workPass)) rejectWorkPass('FACTORY_WORK_PASS_REQUIRED');
@@ -51,7 +51,28 @@ export function validateWorkPass({ workPass, workPassRef, workId, checkpointId }
     rejectWorkPass('FACTORY_WORK_PASS_VERSION_INVALID');
   }
   if (text(workPass.status) !== 'ACTIVE') rejectWorkPass('FACTORY_WORK_PASS_INACTIVE');
-  if (text(workPass.actor) !== 'GO') rejectWorkPass('FACTORY_WORK_PASS_ACTOR_INVALID');
+  const passActor = text(workPass.actor);
+  if (!passActor) rejectWorkPass('FACTORY_WORK_PASS_ACTOR_INVALID');
+  // Transport HMAC authenticates the City sender. This actor cannot be supplied
+  // by an end user: City Hall stamps it after checking the authenticated principal.
+  const requestedActor = actingActor == null ? passActor : text(actingActor);
+  if (!requestedActor) rejectWorkPass('FACTORY_HANDOFF_ACTOR_REQUIRED');
+  if (requestedActor !== passActor) {
+    const grant = cityAuthorization;
+    if (!grant || grant.kind !== 'CITY_AUTHORIZATION_V1'
+      || grant.issuedBy !== 'CITY_HALL'
+      || grant.source !== 'EXPLICIT_WORK_GRANT'
+      || grant.action !== 'handoff'
+      || grant.allowed !== true
+      || text(grant.actor) !== requestedActor
+      || text(grant.workId) !== text(workId)
+      || text(grant.checkpointId) !== text(checkpointId)
+      || text(grant.workPassRef) !== ref
+      || text(grant.stationId) !== FACTORY_WORK_PASS_DESTINATION_ID
+      || !text(operation) || text(grant.operation) !== text(operation)) {
+      rejectWorkPass('FACTORY_ACTOR_DELEGATION_REQUIRED');
+    }
+  }
 
   if (text(workPass.workId) !== text(workId) || text(workPass.checkpointId) !== text(checkpointId)) {
     rejectWorkPass('FACTORY_WORK_PASS_SCOPE_MISMATCH');
@@ -74,7 +95,9 @@ export function validateWorkPass({ workPass, workPassRef, workId, checkpointId }
   return Object.freeze({
     workPassRef: ref,
     passId,
-    actor: 'GO',
+    actor: requestedActor,
+    passActor,
+    authorizationSource: requestedActor === passActor ? 'WORK_PASS' : 'EXPLICIT_WORK_GRANT',
     destinationId: FACTORY_WORK_PASS_DESTINATION_ID,
     validated: true,
   });
@@ -98,6 +121,9 @@ export function createHandoff(input = {}) {
     workPassRef: input.workPassRef,
     workId,
     checkpointId,
+    actingActor: input.actingActor,
+    cityAuthorization: input.cityAuthorization,
+    operation: input.operation,
   });
 
   return Object.freeze({
@@ -106,6 +132,9 @@ export function createHandoff(input = {}) {
     workId,
     checkpointId,
     workPassRef: validatedPass.workPassRef,
+    actingActor: validatedPass.actor,
+    passActor: validatedPass.passActor,
+    authorizationSource: validatedPass.authorizationSource,
     source: Object.freeze({
       stationId: requiredString(source.stationId, 'source.stationId'),
       system: requiredString(source.system, 'source.system'),
@@ -132,6 +161,8 @@ export function createReceipt({ receiptId, handoff, status, acceptedAt, outcome 
     workId: handoff.workId,
     checkpointId: handoff.checkpointId,
     workPassRef: handoff.workPassRef,
+    actingActor: handoff.actingActor,
+    authorizationSource: handoff.authorizationSource,
     stationId: FACTORY_STATION_ID,
     status: requiredString(status, 'status'),
     outcome,
@@ -150,6 +181,8 @@ export function createEvidence({ evidenceRef, handoff, observedAt, sourceSha, ve
     workId: handoff.workId,
     checkpointId: handoff.checkpointId,
     workPassRef: handoff.workPassRef,
+    actingActor: handoff.actingActor,
+    authorizationSource: handoff.authorizationSource,
     ownerDomain: handoff.ownerDomain,
     sourceSha: requiredString(sourceSha, 'sourceSha'),
     verificationScope: requiredString(verificationScope, 'verificationScope'),
