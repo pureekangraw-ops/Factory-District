@@ -85,6 +85,24 @@ export function createDwarfLogicTraineeRunner({
       });
     }
 
+    // Training placement is not Logic Workbench execution. Never report COMPLETE
+    // for this intent until create/edit/compare evidence has been verified.
+    if (String(work?.intent || '').toUpperCase() === 'DWARF_LOGIC_WORKBENCH_TRAINING') {
+      return Object.freeze({
+        retryable: false,
+        run: Object.freeze({
+          workId,
+          checkpointId,
+          executionState: 'BLOCKED',
+          returnState: 'PENDING',
+          verificationRef: null,
+          returnRef: null,
+          evidenceRefs: Object.freeze([]),
+        }),
+        failure: Object.freeze({ code: 'LOGIC_WORKBENCH_RUNNER_NOT_WIRED' }),
+      });
+    }
+
     const key = `logic/trainees/${DWARF_ID}/${workId}/${checkpointId}`;
     const evidenceRef = `r2://factory/records/${key}`;
     const returnRef = `${evidenceRef}#return`;
