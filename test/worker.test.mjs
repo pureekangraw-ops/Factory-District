@@ -64,6 +64,44 @@ test('Worker exposes authenticated health, receive and readback with durable ada
   assert.equal(readbackBody.workPassRef, payload.workPassRef);
 });
 
+
+test('signed city rail accepts delegated LIGHT and rejects missing/mismatched city grant', async () => {
+  const recordStore = createDurableStore({ driver: createInMemoryDurableDriver() });
+  const worker = createFactoryWorker({
+    SOURCE_SHA: 'worker-sha-1', METROPOLIS_FACTORY_RAIL_SECRET: RAIL_SECRET,
+  }, { recordStore });
+  const payload = { ...boundaryHandoff(), actingActor: 'LIGHT', operation: 'FACTORY_HANDOFF' };
+  const submit = async body => worker.fetch(await railRequest('https://factory.example/station/receive', {
+    method: 'POST', body: JSON.stringify(body), secret: RAIL_SECRET,
+    headers: { 'content-type': 'application/json' },
+  }));
+
+  let denied = await submit(payload);
+  assert.equal(denied.status, 400);
+  assert.equal((await denied.json()).reason, 'FACTORY_ACTOR_DELEGATION_REQUIRED');
+  assert.equal((await recordStore.list('factory/receipt-events')).length, 0);
+
+  payload.cityAuthorization = {
+    kind: 'CITY_AUTHORIZATION_V1', issuedBy: 'CITY_HALL',
+    source: 'EXPLICIT_WORK_GRANT', allowed: true, action: 'handoff',
+    actor: 'LIGHT', workId: payload.workId, checkpointId: payload.checkpointId,
+    workPassRef: payload.workPassRef, stationId: 'FACTORY_STATION',
+    operation: payload.operation,
+  };
+  const accepted = await submit(payload);
+  assert.equal(accepted.status, 202);
+  const body = await accepted.json();
+  assert.equal(body.receipt.actingActor, 'LIGHT');
+  assert.equal(body.receipt.authorizationSource, 'EXPLICIT_WORK_GRANT');
+  assert.equal(body.readback.boundaryVerified, true);
+  assert.equal(body.readback.actingActor, 'LIGHT');
+  const verified = await worker.fetch(await railRequest(
+    'https://factory.example/station/readback/' + body.receipt.receiptId,
+    { secret: RAIL_SECRET },
+  ));
+  assert.equal((await verified.json()).actingActor, 'LIGHT');
+});
+
 test('Worker rejects invalid Work Pass before creating a receipt', async () => {
   const recordStore = createDurableStore({ driver: createInMemoryDurableDriver() });
   const worker = createFactoryWorker({ SOURCE_SHA: 'worker-sha-1', METROPOLIS_FACTORY_RAIL_SECRET: RAIL_SECRET }, { recordStore });
