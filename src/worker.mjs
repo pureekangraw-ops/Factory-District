@@ -55,6 +55,25 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
             });
       }
 
+      // Same HMAC rail, same Work Pass contract, no additional auth door.
+      // This only checks boundary eligibility; receive() remains authoritative.
+      if (request.method === 'POST' && url.pathname === '/station/preflight') {
+        if (!runtime) return json({ status: 'UNKNOWN', reason: 'DURABLE_STORAGE_NOT_CONFIGURED' }, 503);
+        const authenticated = await authenticateRailRequest(request, env);
+        if (!authenticated.ok) {
+          logRailReject({ phase: 'preflight', reason: authenticated.reason });
+          return json({ status: 'DENIED', reason: authenticated.reason }, authenticated.status);
+        }
+        try {
+          const result = await runtime.preflight(JSON.parse(authenticated.body));
+          return json(result, 200);
+        } catch (error) {
+          const reason = error.code || error.message;
+          return json({ status: 'DENIED', allowed: false, reason },
+            reason === 'SHA_MISMATCH' ? 409 : 403);
+        }
+      }
+
       if (request.method === 'POST' && url.pathname === '/station/receive') {
         if (!runtime) return json({ status: 'UNKNOWN', reason: 'DURABLE_STORAGE_NOT_CONFIGURED' }, 503);
 
