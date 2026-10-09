@@ -97,8 +97,46 @@ test('Factory boundary rejects mismatched Checkpoint ID', async () => {
   await assert.rejects(() => runtime().receive(base('CODE', { workPass: validPass('WORK-CODE', 'CP-OTHER') })), /FACTORY_WORK_PASS_SCOPE_MISMATCH/);
 });
 
-test('Factory boundary rejects wrong actor', async () => {
-  await assert.rejects(() => runtime().receive(base('CODE', { workPass: validPass('WORK-CODE', 'CP-1', { actor: 'LIGHT' }) })), /FACTORY_WORK_PASS_ACTOR_INVALID/);
+test('Factory accepts any authorized Work Pass holder, including LIGHT and custom actors', async () => {
+  for (const actor of ['GO', 'LIGHT', 'DWARF-1']) {
+    const pass = validPass('WORK-CODE', 'CP-1', { actor });
+    const received = await runtime().receive(base('CODE', { workPass: pass, actingActor: actor }));
+    assert.equal(received.receipt.status, 'HANDOFF_VERIFIED');
+    assert.equal(received.receipt.actingActor, actor);
+    assert.equal(received.readback.actingActor, actor);
+    assert.equal(received.readback.authorizationSource, 'WORK_PASS');
+  }
+});
+
+test('Factory rejects acting-actor spoofing unless City attests an explicit scoped grant', async () => {
+  const payload = base('CODE', { actingActor: 'LIGHT', operation: 'FACTORY_HANDOFF' });
+  await assert.rejects(() => runtime().receive(payload), /FACTORY_ACTOR_DELEGATION_REQUIRED/);
+  const grant = {
+    kind: 'CITY_AUTHORIZATION_V1', issuedBy: 'CITY_HALL',
+    source: 'EXPLICIT_WORK_GRANT', action: 'handoff', allowed: true,
+    actor: 'LIGHT', workId: payload.workId, checkpointId: payload.checkpointId,
+    workPassRef: payload.workPassRef, stationId: 'FACTORY_STATION',
+    operation: payload.operation,
+  };
+  const allowed = await runtime().receive({ ...payload, cityAuthorization: grant });
+  assert.equal(allowed.receipt.status, 'HANDOFF_VERIFIED');
+  assert.equal(allowed.receipt.actingActor, 'LIGHT');
+  assert.equal(allowed.readback.authorizationSource, 'EXPLICIT_WORK_GRANT');
+  for (const forged of [
+    { ...grant, action: 'read' },
+    { ...grant, stationId: 'ANOTHER_STATION' },
+    { ...grant, workId: 'WORK-OTHER' },
+    { ...grant, checkpointId: 'CP-OTHER' },
+    { ...grant, workPassRef: 'work-pass://OTHER' },
+    { ...grant, actor: 'UNKNOWN' },
+    { ...grant, allowed: false },
+    { ...grant, operation: 'OTHER' },
+  ]) {
+    await assert.rejects(
+      () => runtime().receive({ ...payload, cityAuthorization: forged }),
+      /FACTORY_ACTOR_DELEGATION_REQUIRED/,
+    );
+  }
 });
 
 test('Factory boundary rejects missing handoff permission', async () => {
