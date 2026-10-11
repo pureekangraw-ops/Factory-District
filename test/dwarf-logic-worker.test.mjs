@@ -35,10 +35,12 @@ test('DWARF runs the complete LOGIC machine and learns all 8 legacy Golden Cases
     idFactory: () => `ID-${++n}`,
     clock: () => `2026-10-08T01:50:${String(t++).padStart(2, '0')}.000Z`,
   });
-  const result = await runner({ work: work(), actorRef: 'PIXIE' });
+  const result = await runner({ work: work(), actorRef: 'DWARF-01' });
 
   assert.equal(result.run.executionState, 'COMPLETE');
   assert.equal(result.run.returnState, 'RETURNED');
+  assert.equal(result.run.workId, work().workId);
+  assert.equal(result.run.workCheckpointId, work().checkpointId);
   assert.equal(result.worker.status, 'ACTIVE');
   assert.equal(result.authority.execute, true);
   assert.equal(result.authority.test, true);

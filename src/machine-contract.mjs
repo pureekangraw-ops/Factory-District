@@ -88,6 +88,11 @@ export function createMachineRun(input = {}) {
     contractVersion: MACHINE_CONTRACT_VERSION,
     runId: requiredString(input.runId, 'runId'),
     workId: requiredString(input.workId, 'workId'),
+    // The incoming Work checkpoint is distinct from the machine's internal
+    // checkpointId (CP-01..CP-05). Keep both identities on the durable run.
+    workCheckpointId: input.workCheckpointId == null
+      ? null
+      : requiredString(input.workCheckpointId, 'workCheckpointId'),
     machineId: requiredString(input.machineId, 'machineId'),
     machineVersion: requiredString(input.machineVersion, 'machineVersion'),
     domain: requiredString(input.domain, 'domain').toUpperCase(),

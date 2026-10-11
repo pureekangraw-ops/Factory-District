@@ -12,6 +12,16 @@ embeds the checked-out Git commit from `WORKERS_CI_COMMIT_SHA`, `GITHUB_SHA`, or
 CODE/VISUAL/LOGIC runners through DWARF-01 as the sole Factory Main Runner. Completed work
 must preserve Work identity, return successfully, and carry machine evidence.
 Machine output is persisted with the receipt and returned by Station readback.
+The incoming Work Checkpoint is persisted as `workCheckpointId`; the machine's
+own `checkpointId` tracks its internal execution steps and is a separate field.
+DWARF returns completion only when Work ID and Work Checkpoint match and the
+result includes verification, return, and evidence references. Retries are
+bounded to three attempts and require both `retryable` and `safeToRetry` from
+the machine result; a retryable flag alone is insufficient.
+
+The Factory runner does not depend on Local AI. This Worker currently has no
+model-provider path; model unavailability therefore cannot stop deterministic
+machine execution, and model output cannot dispatch tools or complete Work.
 
 The current worker entrypoint registers the active DWARF LOGIC worker (pending
 qualification of current-system Golden Case replay). CODE and VISUAL provider

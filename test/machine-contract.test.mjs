@@ -4,7 +4,8 @@ import { createMachineRun, createAttempt, EXECUTION_STATE, RETURN_STATE, SUBJECT
 
 test('MachineRun separates execution, return and subject assessment', () => {
   const run = createMachineRun({
-    runId: 'RUN-1', workId: 'WORK-1', machineId: 'MACHINE-1', machineVersion: '0.1.0', domain: 'LOGIC',
+    runId: 'RUN-1', workId: 'WORK-1', workCheckpointId: 'WORK-1:CP-01',
+    machineId: 'MACHINE-1', machineVersion: '0.1.0', domain: 'LOGIC',
     ingress: { systemId: 'METROPOLIS', surfaceType: 'STATION', surfaceId: 'METROPOLIS-STATION' },
     destination: { systemId: 'FACTORY', surfaceType: 'OWNER', surfaceId: 'LOGIC', ownerDomain: 'LOGIC' },
     transportRef: { kind: 'RAIL', linkId: 'LINK-A-B', trustBoundaryRef: 'TB-1' },
@@ -16,6 +17,8 @@ test('MachineRun separates execution, return and subject assessment', () => {
   assert.equal(run.returnState, RETURN_STATE.PENDING);
   assert.equal(run.subjectAssessment.status, SUBJECT_ASSESSMENT.NOT_ASSESSED);
   assert.equal(run.transportRef.linkId, 'LINK-A-B');
+  assert.equal(run.workCheckpointId, 'WORK-1:CP-01');
+  assert.equal(run.checkpointId, 'CP-01');
 });
 
 test('Attempt requires a new lineage record for every retry', () => {

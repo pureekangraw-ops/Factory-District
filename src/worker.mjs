@@ -17,7 +17,9 @@ function defaultHandlers(domainRunners) {
     const execution = await operator.run({ work: handoff, domain, machineId: `${domain}-MACHINE` });
     const result = execution.result;
     const run = result?.run;
-    const verified = execution.status === 'RETURNED' && run?.workId === handoff.workId
+    const verified = execution.status === 'RETURNED'
+      && run?.workId === handoff.workId
+      && run?.workCheckpointId === handoff.checkpointId
       && Boolean(run.verificationRef) && Boolean(run.returnRef)
       && Array.isArray(run.evidenceRefs) && run.evidenceRefs.length > 0
       && run.evidenceRefs.every(ref => typeof ref === 'string' && ref.trim());
