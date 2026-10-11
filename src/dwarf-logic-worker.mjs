@@ -49,6 +49,7 @@ function machineWork(work, observedAt) {
   return {
     runId: `DWARF-LOGIC:${workId}:${checkpointId}`,
     workId,
+    workCheckpointId: checkpointId,
     machineId: 'DWARF-LOGIC-MACHINE',
     machineVersion: '1.0.0',
     domain: 'LOGIC',
@@ -189,7 +190,7 @@ export function createDwarfLogicWorker({
 } = {}) {
   const durable = assertDurableStore(store);
 
-  return async function runDwarfLogicWorker({ work, actorRef = 'PIXIE' } = {}) {
+  return async function runDwarfLogicWorker({ work, actorRef = DWARF_ID } = {}) {
     const workId = required(work?.workId, 'work.workId');
     const checkpointId = required(work?.checkpointId, 'work.checkpointId');
     const ownerDomain = required(work?.ownerDomain, 'work.ownerDomain').toUpperCase();
@@ -201,7 +202,7 @@ export function createDwarfLogicWorker({
         worker: DWARF_LOGIC_EMPLOYMENT,
         run: Object.freeze({
           workId,
-          checkpointId,
+          workCheckpointId: checkpointId,
           executionState: 'BLOCKED',
           returnState: 'PENDING',
           verificationRef: null,
@@ -220,7 +221,7 @@ export function createDwarfLogicWorker({
         authority: Object.freeze({ execute: true, test: true, merge: false, authorityTransferred: false }),
         run: Object.freeze({
           workId,
-          checkpointId,
+          workCheckpointId: checkpointId,
           executionState: 'COMPLETE',
           returnState: 'RETURNED',
           verificationRef: migration.evidenceRef,

@@ -37,14 +37,15 @@ test('production execution without a machine runner is UNKNOWN, not a verified s
   assert.equal(body.receipt.workPassRef, handoff.workPassRef);
 });
 
-test('Worker runs PIXIE machinery and persists its correlated output for readback', async () => {
+test('Worker runs DWARF machinery and persists its correlated output for readback', async () => {
   let received;
   const worker = createFactoryWorker(workerEnv, { recordStore: store(), domainRunners: { CODE: async ({ work, actorRef }) => {
     received = { work, actorRef };
-    return { run: { workId: work.workId, checkpointId: 'CP-05', executionState: 'COMPLETE', returnState: 'RETURNED', verificationRef: 'verification-1', returnRef: 'return-1', evidenceRefs: ['evidence://machine-1'] }, output: { artifactRef: 'artifact://machine-1' } };
+    return { run: { workId: work.workId, workCheckpointId: work.checkpointId, checkpointId: 'CP-05', executionState: 'COMPLETE', returnState: 'RETURNED', verificationRef: 'verification-1', returnRef: 'return-1', evidenceRefs: ['evidence://machine-1'] }, output: { artifactRef: 'artifact://machine-1' } };
   } } });
   const body = await (await worker.fetch(await request())).json();
-  assert.equal(received.actorRef, 'PIXIE');
+  assert.equal(received.actorRef, 'DWARF-01');
+  assert.equal(body.readback.mainRunner, 'DWARF-01');
   assert.equal(received.work.workId, handoff.workId);
   assert.equal(received.work.workPassRef, handoff.workPassRef);
   assert.equal(body.readback.domainCompleted, true);
@@ -55,9 +56,9 @@ test('Worker runs PIXIE machinery and persists its correlated output for readbac
   assert.equal(persisted.workPassRef, handoff.workPassRef);
 });
 
-for (const patch of [{ workId: 'OTHER' }, { returnState: 'PENDING' }, { evidenceRefs: [] }, { verificationRef: null }, { returnRef: null }]) {
+for (const patch of [{ workId: 'OTHER' }, { workCheckpointId: 'OTHER:CP-01' }, { returnState: 'PENDING' }, { evidenceRefs: [] }, { verificationRef: null }, { returnRef: null }]) {
   test(`Worker does not complete unverifiable machinery ${JSON.stringify(patch)}`, async () => {
-    const worker = createFactoryWorker(workerEnv, { recordStore: store(), domainRunners: { CODE: async () => ({ run: { workId: handoff.workId, checkpointId: 'CP-05', executionState: 'COMPLETE', returnState: 'RETURNED', verificationRef: 'verification-1', returnRef: 'return-1', evidenceRefs: ['evidence://1'], ...patch } }) } });
+    const worker = createFactoryWorker(workerEnv, { recordStore: store(), domainRunners: { CODE: async () => ({ run: { workId: handoff.workId, workCheckpointId: handoff.checkpointId, checkpointId: 'CP-05', executionState: 'COMPLETE', returnState: 'RETURNED', verificationRef: 'verification-1', returnRef: 'return-1', evidenceRefs: ['evidence://1'], ...patch } }) } });
     const body = await (await worker.fetch(await request())).json();
     assert.equal(body.readback.domainCompleted, false);
     assert.equal(body.receipt.status, 'UNKNOWN');
