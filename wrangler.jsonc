@@ -5,6 +5,9 @@
   "build": { "command": "node scripts/write-source-identity.mjs" },
   "compatibility_date": "2026-10-05",
   "r2_buckets": [{ "binding": "RECORD_STORE", "bucket_name": "factory" }],
+  "previews": {
+    "r2_buckets": [{ "binding": "RECORD_STORE", "bucket_name": "factory-district-preview" }]
+  },
   "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "observability": { "enabled": true }
 }
