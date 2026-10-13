@@ -17,10 +17,13 @@ function defaultHandlers(domainRunners) {
     const result = execution.result;
     const run = result?.run;
     const verified = execution.status === 'RETURNED' && run?.workId === handoff.workId
+      && run?.checkpointId === handoff.checkpointId
       && Boolean(run.verificationRef) && Boolean(run.returnRef)
       && Array.isArray(run.evidenceRefs) && run.evidenceRefs.length > 0
       && run.evidenceRefs.every(ref => typeof ref === 'string' && ref.trim());
-    const failureCode = result?.failure?.code || execution.failure?.code || 'MACHINE_RESULT_UNVERIFIED';
+    const correlationMismatch = run?.workId !== handoff.workId || run?.checkpointId !== handoff.checkpointId;
+    const failureCode = result?.failure?.code || execution.failure?.code
+      || (correlationMismatch ? 'MACHINE_WORK_CHECKPOINT_MISMATCH' : 'MACHINE_RESULT_UNVERIFIED');
     return { status: verified ? 'RETURNED' : 'UNKNOWN', reason: verified ? null : failureCode, completed: Boolean(verified), machineResult: result || null, execution };
   }]));
 }
