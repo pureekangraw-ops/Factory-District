@@ -18,6 +18,8 @@ test('DWARF imports recovered Golden Cases through LOGIC without authority trans
   });
   assert.equal(result.run.executionState, 'COMPLETE');
   assert.equal(result.run.returnState, 'RETURNED');
+  assert.equal(result.run.workId, 'WORK-GOLDEN-IMPORT');
+  assert.equal(result.run.checkpointId, 'WORK-GOLDEN-IMPORT:CP-01');
   assert.equal(result.migration.count, 8);
   assert.equal(result.migration.imported.length, 8);
   assert.equal(result.migration.currentQualification, 'REQUALIFICATION_REQUIRED');

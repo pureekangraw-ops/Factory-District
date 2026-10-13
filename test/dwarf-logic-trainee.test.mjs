@@ -1,58 +1,54 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createDurableStore } from '../src/durable-store.mjs';
-import { createDwarfLogicTraineeRunner, DWARF_ID } from '../src/dwarf-logic-trainee.mjs';
-import { createInMemoryDurableDriver } from './support/in-memory-durable-driver.mjs';
+import { createDwarfLogicTraineeRunner } from '../src/dwarf-logic-trainee.mjs';
 
-function store() {
-  return createDurableStore({ driver: createInMemoryDurableDriver() });
+function untouchedStore() {
+  return {
+    capabilities: { durable: true, atomicCompareAndSet: true, appendOnlyEvents: true, readAfterWrite: true },
+    async get() { throw new Error('UNWIRED_LOGIC_MUST_NOT_READ_TRAINING_STATE'); },
+    async put() { throw new Error('UNWIRED_LOGIC_MUST_NOT_WRITE_TRAINING_STATE'); },
+    async append() { throw new Error('UNWIRED_LOGIC_MUST_NOT_APPEND_TRAINING_STATE'); },
+    async list() { return []; },
+  };
 }
 
-function work() {
+function work(intent = 'DWARF_LOGIC_WORKBENCH_TRAINING') {
   return {
     workId: 'WORK-DWARF-LOGIC',
     checkpointId: 'WORK-DWARF-LOGIC:CP-01',
     ownerDomain: 'LOGIC',
-    intent: 'EXECUTE',
+    intent,
     inputRefs: ['chat://dwarf-logic-training'],
   };
 }
 
-test('DWARF is placed at LOGIC DEVELOPMENT_BENCH without production authority', async () => {
-  const durable = store();
-  const runner = createDwarfLogicTraineeRunner({
-    store: durable,
-    clock: () => '2026-10-08T00:00:00.000Z',
-  });
+test('DWARF training placement does not claim Logic Workbench completion', async () => {
+  const runner = createDwarfLogicTraineeRunner({ store: untouchedStore() });
   const result = await runner({ work: work(), actorRef: 'PIXIE' });
 
-  assert.equal(result.run.executionState, 'COMPLETE');
-  assert.equal(result.run.returnState, 'RETURNED');
+  assert.equal(result.run.executionState, 'UNKNOWN');
+  assert.equal(result.run.returnState, 'PENDING');
   assert.equal(result.run.workId, 'WORK-DWARF-LOGIC');
-  assert.equal(result.trainee.dwarfId, DWARF_ID);
-  assert.equal(result.trainee.placement.domain, 'LOGIC');
-  assert.equal(result.trainee.placement.bench, 'DEVELOPMENT_BENCH');
-  assert.equal(result.trainee.placement.mode, 'TRAINING');
-  assert.equal(result.trainee.placement.productionAuthority, false);
-  assert.equal(result.trainee.authority.merge, false);
-  assert.equal(result.trainee.authority.deploy, false);
-  assert.equal(result.trainee.authority.acceptCurrent, false);
-  assert.equal(result.trainee.qualificationStatus, 'PENDING_OWNER');
-  assert.ok(result.run.evidenceRefs[0].startsWith('r2://factory/records/logic/trainees/DWARF-01/'));
+  assert.equal(result.run.checkpointId, 'WORK-DWARF-LOGIC:CP-01');
+  assert.equal(result.run.verificationRef, null);
+  assert.deepEqual(result.run.evidenceRefs, []);
+  assert.equal(result.failure.code, 'LOGIC_WORKBENCH_RUNNER_NOT_WIRED');
 });
 
-test('DWARF trainee placement is idempotent for the same Work checkpoint', async () => {
-  const durable = store();
-  const runner = createDwarfLogicTraineeRunner({ store: durable });
-  const first = await runner({ work: work() });
-  const second = await runner({ work: work() });
+test('generic Logic work stays unknown without creating a trainee placement', async () => {
+  const runner = createDwarfLogicTraineeRunner({ store: untouchedStore() });
+  const result = await runner({ work: work('logic_create') });
 
-  assert.equal(second.storageVersion, first.storageVersion);
-  assert.equal(second.run.evidenceRefs[0], first.run.evidenceRefs[0]);
+  assert.equal(result.run.executionState, 'UNKNOWN');
+  assert.equal(result.run.returnState, 'PENDING');
+  assert.equal(result.run.workId, 'WORK-DWARF-LOGIC');
+  assert.equal(result.run.checkpointId, 'WORK-DWARF-LOGIC:CP-01');
+  assert.deepEqual(result.run.evidenceRefs, []);
+  assert.equal(result.failure.code, 'LOGIC_WORKBENCH_RUNNER_NOT_WIRED');
 });
 
 test('DWARF trainee runner fails closed outside LOGIC', async () => {
-  const runner = createDwarfLogicTraineeRunner({ store: store() });
+  const runner = createDwarfLogicTraineeRunner({ store: untouchedStore() });
   const result = await runner({ work: { ...work(), ownerDomain: 'CODE' } });
 
   assert.equal(result.authorityBoundary, true);

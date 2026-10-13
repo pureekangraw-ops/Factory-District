@@ -20,11 +20,11 @@ function required(value, label) {
   return text;
 }
 
-function runResult({ workId, evidenceRef, returnRef, observedAt }) {
+function runResult({ workId, checkpointId, evidenceRef, returnRef, observedAt }) {
   return Object.freeze({
     run: Object.freeze({
       workId,
-      checkpointId: 'CP-05',
+      checkpointId,
       executionState: 'COMPLETE',
       returnState: 'RETURNED',
       verificationRef: evidenceRef,
@@ -32,6 +32,22 @@ function runResult({ workId, evidenceRef, returnRef, observedAt }) {
       evidenceRefs: Object.freeze([evidenceRef]),
       observedAt,
     }),
+  });
+}
+
+function unknownRunResult({ workId, checkpointId, code = 'LOGIC_WORKBENCH_RUNNER_NOT_WIRED' }) {
+  return Object.freeze({
+    retryable: false,
+    run: Object.freeze({
+      workId,
+      checkpointId,
+      executionState: 'UNKNOWN',
+      returnState: 'PENDING',
+      verificationRef: null,
+      returnRef: null,
+      evidenceRefs: Object.freeze([]),
+    }),
+    failure: Object.freeze({ code }),
   });
 }
 
@@ -63,12 +79,14 @@ export function createDwarfLogicTraineeRunner({
       });
     }
 
-    if (String(work?.intent || '').toUpperCase() === 'IMPORT_GOLDEN_CASES') {
+    const intent = String(work?.intent || '').trim().toUpperCase();
+    if (intent === 'IMPORT_GOLDEN_CASES') {
       const migration = await importLegacyGoldenCases({ store: durable, clock });
       const observedAt = clock();
       return Object.freeze({
         ...runResult({
           workId,
+          checkpointId,
           evidenceRef: migration.evidenceRef,
           returnRef: `${migration.evidenceRef}#return`,
           observedAt,
@@ -85,92 +103,8 @@ export function createDwarfLogicTraineeRunner({
       });
     }
 
-    // Training placement is not Logic Workbench execution. Never report COMPLETE
-    // for this intent until create/edit/compare evidence has been verified.
-    if (String(work?.intent || '').toUpperCase() === 'DWARF_LOGIC_WORKBENCH_TRAINING') {
-      return Object.freeze({
-        retryable: false,
-        run: Object.freeze({
-          workId,
-          checkpointId,
-          executionState: 'BLOCKED',
-          returnState: 'PENDING',
-          verificationRef: null,
-          returnRef: null,
-          evidenceRefs: Object.freeze([]),
-        }),
-        failure: Object.freeze({ code: 'LOGIC_WORKBENCH_RUNNER_NOT_WIRED' }),
-      });
-    }
-
-    const key = `logic/trainees/${DWARF_ID}/${workId}/${checkpointId}`;
-    const evidenceRef = `r2://factory/records/${key}`;
-    const returnRef = `${evidenceRef}#return`;
-    const existing = await durable.get(key);
-    const observedAt = clock();
-
-    if (!existing) {
-      const placement = Object.freeze({
-        schema: 'DWARF_LOGIC_TRAINEE_V1',
-        dwarfId: DWARF_ID,
-        lineage: DWARF_LINEAGE,
-        workId,
-        checkpointId,
-        actorRef,
-        attempt,
-        placement: DWARF_LOGIC_PLACEMENT,
-        qualificationStatus: 'PENDING_OWNER',
-        authority: Object.freeze({
-          changeWork: false,
-          merge: false,
-          deploy: false,
-          acceptCurrent: false,
-          authorityTransferred: false,
-        }),
-        status: 'PLACED_FOR_TRAINING',
-        inputRefs: Object.freeze(Array.isArray(work?.inputRefs) ? [...work.inputRefs] : []),
-        observedAt,
-      });
-      await durable.put(key, placement, { expectedVersion: 0 });
-      await durable.append(`logic/trainee-events/${DWARF_ID}`, {
-        kind: 'DWARF_LOGIC_TRAINEE_PLACED',
-        workId,
-        checkpointId,
-        evidenceRef,
-        observedAt,
-      });
-    }
-
-    const persisted = await durable.get(key);
-    const placement = persisted?.value;
-    const verified = placement?.dwarfId === DWARF_ID
-      && placement?.workId === workId
-      && placement?.checkpointId === checkpointId
-      && placement?.placement?.domain === 'LOGIC'
-      && placement?.placement?.bench === 'DEVELOPMENT_BENCH'
-      && placement?.placement?.productionAuthority === false;
-
-    if (!verified) {
-      return Object.freeze({
-        retryable: false,
-        run: Object.freeze({
-          workId,
-          checkpointId,
-          executionState: 'UNKNOWN',
-          returnState: 'UNKNOWN',
-          verificationRef: null,
-          returnRef: null,
-          evidenceRefs: Object.freeze([]),
-        }),
-        failure: Object.freeze({ code: 'DWARF_LOGIC_PLACEMENT_READBACK_UNVERIFIED' }),
-      });
-    }
-
-    return Object.freeze({
-      ...runResult({ workId, evidenceRef, returnRef, observedAt: clock() }),
-      trainee: placement,
-      storageVersion: persisted.version,
-      retryable: false,
-    });
+    // Placement is not Logic Workbench execution. No training or generic Logic
+    // request may claim completion until a real runner returns execution evidence.
+    return unknownRunResult({ workId, checkpointId });
   };
 }
