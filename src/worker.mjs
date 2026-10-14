@@ -99,6 +99,25 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
         }
       }
 
+      // A restricted evidence-only recovery for an interrupted Pantheon LOGIC handoff.
+      // This route NEVER calls a domain runner or repeats a machine effect.
+      if (request.method === 'POST' && url.pathname === '/station/reconcile') {
+        if (!runtime) return json({status:'UNKNOWN',reason:'DURABLE_STORAGE_NOT_CONFIGURED'},503);
+        const authenticated=await authenticateRailRequest(request,env);
+        if (!authenticated.ok) return json({status:'DENIED',reason:authenticated.reason},authenticated.status);
+        if (authenticated.principal !== 'PANTHEON')
+          return json({status:'DENIED',reason:'PANTHEON_RAIL_REQUIRED'},403);
+        try {
+          const input=JSON.parse(authenticated.body);
+          validatePantheonHandoff(input);
+          const result=await runtime.reconcile(input);
+          return json(result, result.status==='UNKNOWN'?409:200);
+        }catch(error){
+          const reason=error.code||error.message;
+          return json({status:'UNKNOWN',reason},reason==='FACTORY_WORK_SCOPE_CONFLICT'?409:400);
+        }
+      }
+
       if (request.method === 'GET' && url.pathname.startsWith('/station/readback/')) {
         if (!runtime) return json({ status: 'UNKNOWN', reason: 'DURABLE_STORAGE_NOT_CONFIGURED' }, 503);
 
