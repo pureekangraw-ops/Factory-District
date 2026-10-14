@@ -47,7 +47,15 @@ jobs:
         run: |
           set -euo pipefail
           BASE="https://factory-district.pureekangraw.workers.dev"
-          curl --fail --silent --show-error --retry 6 --retry-delay 2 "$BASE/health" > /tmp/factory-health.json
+          # Cloudflare version propagation may briefly serve a previous SHA.
+          # Only pass after independently seeing the freshly deployed commit.
+          correct=0
+          for attempt in $(seq 1 30); do
+            curl --fail --silent --show-error "$BASE/health" > /tmp/factory-health.json
+            if jq -e --arg sha "$EXPECTED_SHA" '.sourceSha==$sha and .runtimeSha==$sha' /tmp/factory-health.json >/dev/null; then correct=1; break; fi
+            sleep 2
+          done
+          test "$correct" -eq 1
           node --input-type=module -e '
             import { readFileSync } from "node:fs";
             const h = JSON.parse(readFileSync("/tmp/factory-health.json", "utf8"));
