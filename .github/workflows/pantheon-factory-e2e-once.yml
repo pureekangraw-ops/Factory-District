@@ -42,24 +42,27 @@ jobs:
           trap cleanup EXIT
           printf '%s' "$TOKEN" | npx --yes wrangler@4.147.0 secret put WORKHUB_SMOKE_TOKEN --name phatheon-workhub
           created=1
+          # Reconcile the SAME Work created in the first live trial.
+          # Factory's durable claim prevents re-running a machine effect.
+          TASK_ID="task_be8f62ad42f3425baa29e3dbe7d6e3f2"
           for attempt in $(seq 1 12); do
             status="$(curl --silent --show-error --output /tmp/workhub-e2e-job.json --write-out '%{http_code}' \
-              -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
-              --data '{"request":"Authorized 2026-10-14 E2E: place DWARF-01 at LOGIC development bench; no external production authority"}' \
-              "$BASE/v1/factory/jobs")"
-            if [ "$status" = "201" ]; then break; fi
-            if [ "$status" != "401" ] && [ "$status" != "503" ]; then
-              echo "::error::Factory job create HTTP $status"; cat /tmp/workhub-e2e-job.json; exit 1
-            fi
+              -H "Authorization: Bearer $TOKEN" "$BASE/v1/factory/jobs/$TASK_ID")"
+            if [ "$status" = "200" ]; then break; fi
+            if [ "$status" != "401" ]; then echo "::error::Factory status HTTP $status"; exit 1; fi
             sleep 3
           done
-          test "$status" = "201"
-          TASK_ID="$(jq -r '.task_id' /tmp/workhub-e2e-job.json)"
-          echo "$TASK_ID" | grep -Eq '^task_[a-f0-9]{32}$'
-          echo "Factory job created, explicit dispatch begins."
-          curl --fail --silent --show-error \
+          test "$status" = "200"
+          jq -e '.job.status=="NEEDS_RECONCILIATION"' /tmp/workhub-e2e-job.json >/dev/null
+          echo "Factory reconciliation for prior Work ID begins."
+          STATUS="$(curl --silent --show-error --output /tmp/workhub-e2e-dispatch.json --write-out '%{http_code}' \
             -H "Authorization: Bearer $TOKEN" -X POST \
-            "$BASE/v1/factory/jobs/$TASK_ID/dispatch" > /tmp/workhub-e2e-dispatch.json
+            "$BASE/v1/factory/jobs/$TASK_ID/reconcile")"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Factory reconcile HTTP $STATUS"
+            cat /tmp/workhub-e2e-dispatch.json
+            exit 1
+          fi
           jq -e '.status=="COMPLETED" and .verified==true and (.result.evidenceRefs|length)>0 and (.receipt_id|startswith("receipt-"))' /tmp/workhub-e2e-dispatch.json > /dev/null
           curl --fail --silent --show-error -H "Authorization: Bearer $TOKEN" \
             "$BASE/v1/factory/jobs/$TASK_ID" > /tmp/workhub-e2e-readback.json
