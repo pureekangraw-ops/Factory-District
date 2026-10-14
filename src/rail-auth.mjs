@@ -44,7 +44,11 @@ export function railTransportHealth(env = {}) {
 export async function authenticateRailRequest(request, env = {}, {
   nowMs = () => Date.now(),
 } = {}) {
-  const secret = text(env.METROPOLIS_FACTORY_RAIL_SECRET);
+  // Independent PANTHEON credential; never share or rotate the City rail key.
+  const principal = request.headers.get('x-factory-client') === 'PANTHEON' ? 'PANTHEON' : 'CITY';
+  const secret = text(principal === 'PANTHEON'
+    ? env.PANTHEON_FACTORY_RAIL_SECRET
+    : env.METROPOLIS_FACTORY_RAIL_SECRET);
   if (!secret) return { ok: false, status: 503, reason: 'FACTORY_RAIL_SECRET_NOT_CONFIGURED' };
 
   const protocol = text(request.headers.get('x-metropolis-factory-protocol'));
@@ -63,5 +67,36 @@ export async function authenticateRailRequest(request, env = {}, {
   const verified = await verifyHmac({ body, secret, timestamp, signature });
   if (!verified) return { ok: false, status: 401, reason: 'FACTORY_RAIL_SIGNATURE_INVALID' };
 
-  return { ok: true, body };
+  return { ok: true, body, principal };
 }
+
+export function validatePantheonHandoff(input) {
+  const task = input?.workId;
+  const pass = input?.workPass;
+  const isTask = typeof task === 'string' && /^task_[a-f0-9]{32}$/.test(task);
+  const expectedCheckpoint = isTask ? `cp-${task}` : null;
+  const allowed = isTask && input.checkpointId === expectedCheckpoint
+    && input.ownerDomain === 'LOGIC' && input.intent === 'PLACE_DWARF_LOGIC_TRAINEE'
+    && Array.isArray(input.scope) && input.scope.length === 1 && input.scope[0] === 'EXECUTE:LOGIC'
+    && Array.isArray(input.inputRefs) && input.inputRefs.length === 0
+    && input.source?.stationId === 'PANTHEON' && input.source?.system === 'pantheon-workhub'
+    && input.target?.stationId === 'FACTORY-STATION'
+    && input.target?.system === 'factory-district' && input.target?.component === 'FACTORY_HALL'
+    && input.workPassRef === `work-pass://pantheon-${task}`
+    && pass?.kind === 'WORK_PASS' && pass.version === 'WORK_PASS_V1'
+    && pass.status === 'ACTIVE' && pass.passId === `pantheon-${task}`
+    && pass.actor === 'PANTHEON' && pass.workId === task && pass.checkpointId === expectedCheckpoint
+    && Array.isArray(pass.permissions?.actions)
+    && pass.permissions.actions.length === 1 && pass.permissions.actions[0] === 'handoff'
+    && Array.isArray(pass.permissions?.handoff) && pass.permissions.handoff.length === 1
+    && pass.permissions.handoff[0]?.stationId === 'FACTORY_STATION'
+    && pass.authorityTransferred !== true
+    && input.actingActor == null && input.cityAuthorization == null && input.operation == null;
+  if (!allowed) {
+    const error = new Error('PANTHEON_RAIL_SCOPE_DENIED');
+    error.code = 'PANTHEON_RAIL_SCOPE_DENIED';
+    throw error;
+  }
+  return input;
+}
+
