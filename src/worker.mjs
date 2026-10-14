@@ -2,7 +2,7 @@ import { createR2RecordStore } from './r2-record-store.mjs';
 import { createFactoryRuntime } from './factory-runtime.mjs';
 import { createPixieOperator } from './pixie-autonomous.mjs';
 import { BUILD_SOURCE_SHA } from './build-source-identity.mjs';
-import { authenticateRailRequest, railTransportHealth } from './rail-auth.mjs';
+import { authenticateRailRequest, railTransportHealth, validatePantheonHandoff } from './rail-auth.mjs';
 import { createDwarfLogicTraineeRunner } from './dwarf-logic-trainee.mjs';
 
 function json(body, status = 200) {
@@ -65,7 +65,9 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
           return json({ status: 'DENIED', reason: authenticated.reason }, authenticated.status);
         }
         try {
-          const result = await runtime.preflight(JSON.parse(authenticated.body));
+          const input = JSON.parse(authenticated.body);
+          if (authenticated.principal === 'PANTHEON') validatePantheonHandoff(input);
+          const result = await runtime.preflight(input);
           return json(result, 200);
         } catch (error) {
           const reason = error.code || error.message;
@@ -84,7 +86,9 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
         }
 
         try {
-          const result = await runtime.receive(JSON.parse(authenticated.body));
+          const input = JSON.parse(authenticated.body);
+          if (authenticated.principal === 'PANTHEON') validatePantheonHandoff(input);
+          const result = await runtime.receive(input);
           const status = result.receipt.status === 'DENIED' ? 403 : result.receipt.status === 'UNKNOWN' ? 409 : 202;
           return json(result, status);
         } catch (error) {
@@ -106,6 +110,12 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
 
         const receiptId = decodeURIComponent(url.pathname.slice('/station/readback/'.length));
         const result = await runtime.readback(receiptId);
+        if (authenticated.principal === 'PANTHEON' && result.reason !== 'RECEIPT_NOT_FOUND'
+          && (result.actingActor !== 'PANTHEON'
+            || !/^task_[a-f0-9]{32}$/.test(result.workId || '')
+            || result.workPassRef !== `work-pass://pantheon-${result.workId}`)) {
+          return json({ status: 'DENIED', reason: 'PANTHEON_RAIL_READBACK_DENIED' }, 403);
+        }
         return json(result, result.reason === 'RECEIPT_NOT_FOUND' ? 404 : 200);
       }
 
