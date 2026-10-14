@@ -88,7 +88,10 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
           const status = result.receipt.status === 'DENIED' ? 403 : result.receipt.status === 'UNKNOWN' ? 409 : 202;
           return json(result, status);
         } catch (error) {
-          return json({ status: 'DENIED', reason: error.code || error.message }, 400);
+          const reason = error.code || error.message;
+          const status = reason === 'FACTORY_WORK_SCOPE_CONFLICT' || reason === 'FACTORY_CLAIM_UNCERTAIN'
+            ? 409 : reason === 'STORAGE_UNAVAILABLE' ? 503 : 400;
+          return json({ status: status === 409 ? 'UNKNOWN' : 'DENIED', reason }, status);
         }
       }
 
