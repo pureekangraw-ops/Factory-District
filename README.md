@@ -120,3 +120,20 @@ The existing rail secret is not rotated. WorkHub does not yet have the rail
 credential, and this change does **not** bypass City Hall grants or expose a
 public unsigned dispatch endpoint. Integration readiness must be separately
 verified before enabling full WorkHub-to-Factory execution.
+
+## Verified Pantheon WorkHub LOGIC handoff and recovery (2026-10-14)
+
+Dedicated Pantheon HMAC rail is independent of City/Metro's existing secret.
+The live scoped Work `task_be8f62ad42f3425baa29e3dbe7d6e3f2` completed
+after recovering a missing receipt **from a persisted DWARF-01 LOGIC training-bench
+record**, not by replaying the machine. Factory Work Pass and HMAC validation,
+D1 receipt/evidence ledger and independent readback succeeded.
+
+Proof: https://github.com/pureekangraw-ops/Factory-District/actions/runs/38504439559
+Receipt: `receipt-a9327c1d-1856-4b27-b656-f8bae03dbe10`.
+
+`POST /station/reconcile` is available only to the PANTHEON authenticated
+principal and matching scoped LOGIC Work Pass. It reads a durable claim and
+machine evidence, then recovers a missing receipt. No machine is invoked here;
+absent or unverified effect remains UNKNOWN. The temporary CI smoke credential
+was revoked and the single-use workflow retired. CODE/VISUAL are not production-ready.
