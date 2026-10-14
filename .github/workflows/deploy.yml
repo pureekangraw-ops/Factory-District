@@ -39,3 +39,27 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy --var SOURCE_SHA:${{ github.sha }}
+
+      - name: Verify live Factory health and reject unsigned execution
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://factory-district.pureekangraw.workers.dev"
+          curl --fail --silent --show-error --retry 6 --retry-delay 2 "$BASE/health" > /tmp/factory-health.json
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const h = JSON.parse(readFileSync("/tmp/factory-health.json", "utf8"));
+            const fail = (msg) => { throw new Error(msg); };
+            if (h.service !== "factory-district" || h.stationId !== "FACTORY-STATION") fail("Factory identity mismatch");
+            if (h.sourceSha !== process.env.EXPECTED_SHA || h.runtimeSha !== process.env.EXPECTED_SHA) fail("Live Factory source SHA mismatch");
+            if (h.storage?.status !== "READY" || h.transport?.status !== "READY") fail("Factory storage/rail not ready");
+            if (h.machinery?.LOGIC?.status !== "READY") fail("Factory LOGIC runner not ready");
+            console.log(JSON.stringify({service:h.service,sourceSha:h.sourceSha,station:h.status,storage:h.storage.status,transport:h.transport.status,logic:h.machinery.LOGIC.status}));
+          '
+          UNSIGNED_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --request POST "$BASE/station/receive")"
+          case "$UNSIGNED_STATUS" in
+            400|401|403) echo "Unsigned Factory dispatch rejected (HTTP $UNSIGNED_STATUS)" ;;
+            *) echo "::error::Unsigned dispatch unexpected response HTTP $UNSIGNED_STATUS"; exit 1 ;;
+          esac
