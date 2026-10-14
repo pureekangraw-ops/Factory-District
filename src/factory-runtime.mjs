@@ -21,6 +21,18 @@ function receiptKey(receiptId) {
   return `factory/receipt/${requiredString(receiptId, 'receiptId')}`;
 }
 
+// A durable claim is created before touching a machine. If a rail retry arrives
+// after a timeout, it must read the prior outcome rather than execute twice.
+async function shaHex(value) {
+  const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value)));
+  return [...new Uint8Array(buffer)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+function scopedError(code) {
+  const error = new Error(code);
+  error.code = code;
+  return error;
+}
+
 export function createFactoryRuntime({
   clock = () => new Date().toISOString(),
   idFactory = () => crypto.randomUUID(),
@@ -72,6 +84,39 @@ export function createFactoryRuntime({
   async function receive(input = {}) {
     const handoff = createHandoff({ ...input, requestedAt: input.requestedAt || clock() });
     const receiptId = `receipt-${idFactory()}`;
+    // Work ID + checkpoint are the execution identity. Credentials and timestamps
+    // are deliberately NOT part of the claim key.
+    const claimKey = `factory/claim/${await shaHex([handoff.workId, handoff.checkpointId])}`;
+    const fingerprint = await shaHex({
+      workId: handoff.workId, checkpointId: handoff.checkpointId,
+      workPassRef: handoff.workPassRef, actingActor: handoff.actingActor,
+      passActor: handoff.passActor, authorizationSource: handoff.authorizationSource,
+      source: handoff.source, target: handoff.target, ownerDomain: handoff.ownerDomain,
+      intent: handoff.intent, scope: handoff.scope, inputRefs: handoff.inputRefs,
+      expectedSourceSha: handoff.expectedSourceSha,
+    });
+    try {
+      await store.put(claimKey, { receiptId, fingerprint, status: 'IN_PROGRESS', claimedAt: clock() }, { expectedVersion: 0 });
+    } catch (error) {
+      if (error?.message !== 'DURABLE_CONFLICT') throw error;
+      const claimed = (await store.get(claimKey))?.value;
+      if (!claimed) throw scopedError('FACTORY_CLAIM_UNCERTAIN');
+      if (claimed.fingerprint !== fingerprint) throw scopedError('FACTORY_WORK_SCOPE_CONFLICT');
+      // A receipt is the authority. A pending claim is NOT a failure to
+      // execute: the machine may have already performed its effect.
+      const stored = (await store.get(receiptKey(claimed.receiptId)))?.value;
+      if (stored) return Object.freeze({ receipt: stored.receipt, readback: stored.readback, pixie: stored.pixieResult });
+      return Object.freeze({
+        receipt: { receiptId: claimed.receiptId, workId: handoff.workId, checkpointId: handoff.checkpointId,
+          workPassRef: handoff.workPassRef, status: FACTORY_STATUS.UNKNOWN,
+          reason: 'FACTORY_EFFECT_UNRECONCILED' },
+        readback: { receiptId: claimed.receiptId, workId: handoff.workId, checkpointId: handoff.checkpointId,
+          workPassRef: handoff.workPassRef, status: FACTORY_STATUS.UNKNOWN,
+          boundaryVerified: false, domainCompleted: false, domainVerified: false,
+          reason: 'FACTORY_EFFECT_UNRECONCILED' },
+        pixie: null,
+      });
+    }
     const acceptedAt = clock();
     let status = FACTORY_STATUS.ACCEPTED;
     let outcome = null;
