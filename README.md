@@ -92,3 +92,31 @@ proof of successful CODE/VISUAL/LOGIC production.
 The City must never pass through caller-supplied `actingActor` or
 `cityAuthorization`; both fields are stamped from server-side authorization.
 Old same-holder Work Pass traffic without `actingActor` stays compatible.
+
+
+## Delivery safety and replay reconciliation (2026-10-14)
+
+The Station now atomically claims the Work ID + Checkpoint ID in the existing
+R2 record store **before** invoking a domain runner. This is not a new credential
+or permission mechanism. The HMAC rail and City-issued scoped Work Pass are
+still required and are validated before claim.
+
+- Identical resubmission returns the original durable receipt/readback without
+  re-executing PIXIE or machinery. The sender can confirm using the signed
+  `/station/readback/:receiptId` endpoint.
+- Concurrent resubmission while the first execution is in flight returns
+  `UNKNOWN / FACTORY_EFFECT_UNRECONCILED` with the existing receipt ID.
+  Senders must reconcile with readback; they must not retry the effect.
+- Reusing a Work ID + Checkpoint ID with a different operation/scope or actor
+  is rejected as `FACTORY_WORK_SCOPE_CONFLICT` (HTTP 409).
+- If execution completed but storage failed, the durable claim remains. It is
+  intentionally **not** erased or automatically retried: manual reconciliation
+  is required before any new execution could be considered.
+- The result of boundary handoff is distinct from completed domain production.
+  Health status for CODE/VISUAL/LOGIC must reflect actual registered runners;
+  never declare an unregistered runner READY.
+
+The existing rail secret is not rotated. WorkHub does not yet have the rail
+credential, and this change does **not** bypass City Hall grants or expose a
+public unsigned dispatch endpoint. Integration readiness must be separately
+verified before enabling full WorkHub-to-Factory execution.
