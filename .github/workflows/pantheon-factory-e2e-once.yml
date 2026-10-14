@@ -40,6 +40,14 @@ jobs:
             fi
           }
           trap cleanup EXIT
+          # Avoid dispatch while the Factory version from this push is rolling out.
+          ready=0
+          for attempt in $(seq 1 30); do
+            curl --fail --silent --show-error "https://factory-district.pureekangraw.workers.dev/health" > /tmp/factory-version.json
+            if jq -e --arg sha "$GITHUB_SHA" '.sourceSha==$sha and .runtimeSha==$sha and .storage.status=="READY" and .transport.status=="READY"' /tmp/factory-version.json >/dev/null; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" -eq 1
           printf '%s' "$TOKEN" | npx --yes wrangler@4.147.0 secret put WORKHUB_SMOKE_TOKEN --name phatheon-workhub
           created=1
           # Reconcile the SAME Work created in the first live trial.
