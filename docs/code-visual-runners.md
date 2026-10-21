@@ -77,3 +77,42 @@ independent destination readback. Server execution deadlines/cancellation,
 provider idempotency and configurable PIXIE retry policy remain separate work.
 No production deployment, real task dispatch, new secret or authority grant is
 part of this change.
+
+## Concrete edge providers — bounded staging capability
+
+`src/edge-providers.mjs` now provides an actual Cloudflare runtime implementation.
+`edge-provider-entry.mjs` exports CodeProvider / VisualProvider as private
+WorkerEntrypoint RPC services. `staging-entry.mjs` keeps the existing signed rail
+and adds an authenticated read-only artifact route. Separate Wrangler configs
+bind only the existing factory-district-preview bucket; production config is not
+modified. The staging rail secret is separate from production.
+
+Supported CODE work is a single JavaScript Worker module, an exactly-once text
+replacement patch, and 1–8 explicit HTTP response assertions. The input is a
+schema FACTORY_EDGE_JOB_V1 JSON object with exact Work/checkpoint/domain identity,
+baseSource, patch {find,replace}, and tests [{path,status,body}]. Each Work supplies
+one immutable inputRef of the form
+r2://factory-district-preview/edge-inputs/<id>.json#sha256=<64-hex-digest>.
+Providers recheck the digest and identity on every step. They read no arbitrary
+bucket keys or network URL from the input.
+
+The CODE provider applies the patch, persists the JS module, executes tests in
+Cloudflare Dynamic Workers with globalOutbound:null and no passed bindings,
+checks the persisted artifact, repeats the edge test checkpoint, creates a
+content-addressed dynamic staging deployment, and independently loads the saved
+module again for runtime verification. This is not arbitrary Node.js/npm,
+GitHub CI, or a production deployment. Existing pipeline field ciCheckpoint is
+explicitly labelled EDGE_RUNTIME_TESTS_NOT_GITHUB_CI in its evidence.
+
+VISUAL supports a static HTML card template with design {title,body,accent} and
+a bounded viewport {width,height}. It creates HTML, calls Cloudflare Browser Run
+Quick Actions for real PNG rendering and rendered HTML, verifies PNG structure,
+viewport, text presence and saved output digest, then exports PNG. It does not
+claim aesthetic judgment, arbitrary image generation, or interactive UI testing.
+CSP blocks scripts and external resources in the generated page.
+
+Result objects and per-step evidence use edge-results/<Work>/<checkpoint>/<run>/
+in staging R2. Writes are conditional and conflicting artifacts are not replaced.
+The authenticated /staging/artifact/<encoded-key> endpoint can read only that
+prefix; there is no public unsigned execution or artifact upload route. The
+provider itself has no enabled public workers.dev endpoint.

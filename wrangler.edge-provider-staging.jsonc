@@ -1,0 +1,20 @@
+{
+  "name": "factory-machinery-staging",
+  "main": "src/edge-provider-entry.mjs",
+  "compatibility_date": "2026-10-13",
+  "workers_dev": false,
+  "r2_buckets": [
+    {
+      "binding": "ARTIFACTS",
+      "bucket_name": "factory-district-preview"
+    }
+  ],
+  "browser": {
+    "binding": "BROWSER"
+  },
+  "worker_loaders": [
+    {
+      "binding": "LOADER"
+    }
+  ]
+}
