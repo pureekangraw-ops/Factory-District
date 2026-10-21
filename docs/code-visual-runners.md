@@ -69,8 +69,7 @@ build/deploy/render operations. The durable adapter also runs the kernel's
 transition, cancellation, qualification and return contract scenarios, plus a
 restart and competing-writer test. New tests were observed failing before fixes.
 
-Run npm test and npm run check; inspect the PR's exact-head CI. No live CODE or
-VISUAL service binding has been selected/verified. To accept real execution,
+Run npm test and npm run check; inspect the PR's exact-head CI. Live isolated CODE/VISUAL staging was subsequently verified at source aa21e0716d498a692b558e18cd9da1568d4a92c5; production bindings remain unmodified. To accept real execution,
 connect owner-approved providers on isolated staging, verify exact deployed SHA
 and storage/provider bindings, and observe an authorized real artifact and its
 independent destination readback. Server execution deadlines/cancellation,
@@ -116,3 +115,39 @@ in staging R2. Writes are conditional and conflicting artifacts are not replaced
 The authenticated /staging/artifact/<encoded-key> endpoint can read only that
 prefix; there is no public unsigned execution or artifact upload route. The
 provider itself has no enabled public workers.dev endpoint.
+
+
+## Observed live staging acceptance — 2026-10-22 (Asia/Bangkok)
+
+At source aa21e0716d498a692b558e18cd9da1568d4a92c5, the two separate staging
+Workers were deployed and their actual bindings read back from Cloudflare:
+factory-code-visual-staging -> private factory-machinery-staging CodeProvider /
+VisualProvider; both use factory-district-preview, not the production bucket.
+The provider's workers.dev and Preview endpoints are disabled. A distinct staging
+HMAC secret was created; production secrets and Work authority were unchanged.
+
+Actual signed staging jobs completed through the existing Factory pipelines:
+
+- CODE receipt receipt-d7a3748b-e16b-4936-bd28-d19edfcbcc20: patched "before" to
+  "live", executed real Dynamic Worker HTTP assertions, saved the module and a
+  content-addressed staging deployment, and independently reloaded the saved
+  code for runtime verification. Downloaded JS SHA-256 matched runtimeSha.
+- VISUAL receipt receipt-31e864a5-252c-4281-b3a3-5011a1b42321: created HTML,
+  rendered it using real Browser Run, verified rendered text and PNG viewport,
+  then exported an 800x600 PNG (27,775 bytes). Independently downloaded PNG
+  SHA-256 matched finalOutput; PIL verified/decoded it and it was visually read.
+- Independent signed owner readbacks matched initial persisted results exactly.
+  Identical resubmissions returned the same receipt and readback. Unsigned
+  dispatch was rejected HTTP 401.
+
+The Work inputs were synthetic acceptance tasks; the remote code execution,
+browser render, R2 writes, receipts and downloads were real staging effects.
+This is bounded staging acceptance, not general Node/npm, generative imagery,
+subjective visual review or production acceptance. See
+[evidence JSON](evidence/edge-staging-proof.json) and
+[downloaded PNG](evidence/edge-visual-staging.png).
+
+Local and exact-source GitHub CI: 249/249 tests and syntax PASS. CI run
+39665109372 tested source aa21e071; PR merge tree matched the deployed-source
+tree d2cf58592c49b9dcfa9efb42e4fcd1c2a1c5077a. The later evidence-only commit
+adds these readbacks without redeploying the same executable code.
