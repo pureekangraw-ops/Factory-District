@@ -11,7 +11,7 @@ import { railRequest } from './support/rail-auth.mjs';
 const SECRET = 'LOCAL-FICTIONAL-RAIL-SECRET-NOT-A-CREDENTIAL';
 const SOURCE = 'LOCAL-SYNTHETIC-SOURCE-NOT-A-DEPLOYMENT';
 function envelope(domain = 'LOGIC') {
-  const workId = `LOCAL-E2E-${domain}`, checkpointId = 'CP-05';
+  const workId = `LOCAL-E2E-${domain}`, checkpointId = 'LOCAL-E2E:WORK-CP-99';
   return {
     workId, checkpointId, ownerDomain: domain, intent: 'PLACE_DWARF_LOGIC_TRAINEE',
     scope: [`EXECUTE:${domain}`], inputRefs: ['fixture://local-input'], expectedSourceSha: SOURCE,
@@ -51,8 +51,6 @@ test('LOCAL ONLY: intake → signed dispatch → real bounded runner → persist
   assert.equal(readback.domainVerified, true);
   assert.equal(readback.sourceSha, SOURCE);
   assert.equal(readback.machineResult.run.workId, input.workId);
-  // CP-05 intentionally matches the existing runner. This test does not hide
-  // the arbitrary-checkpoint gap tracked separately in open PR #31.
   assert.equal(readback.machineResult.run.checkpointId, input.checkpointId);
   assert.equal(readback.machineResult.trainee.placement.mode, 'TRAINING');
   assert.equal(readback.machineResult.trainee.placement.productionAuthority, false);
@@ -147,3 +145,20 @@ test('LOCAL ONLY: caller deadline and concurrent retry never replay an in-flight
   assert.equal(executions, 1);
   assert.equal(placementRecords(bucket).length, 1);
 });
+
+for (const intent of ['logic_create', 'EXECUTE', 'DWARF_LOGIC_WORKBENCH_TRAINING', 'place_dwarf_logic_trainee']) {
+  test(`LOCAL ONLY: unsupported Logic intent ${intent} never becomes placement completion`, async () => {
+    const app = harness();
+    const input = { ...envelope(), intent };
+    const received = await request(app, '/station/receive', { body: input });
+    assert.equal(received.status, 409);
+    assert.equal(received.body.readback.domainVerified, false);
+    assert.equal(received.body.receipt.reason, 'DWARF_LOGIC_INTENT_NOT_SUPPORTED');
+    assert.equal(received.body.readback.machineResult.run.verificationRef, null);
+    assert.deepEqual(received.body.readback.machineResult.run.evidenceRefs, []);
+    assert.equal(placementRecords(app.bucket).length, 0);
+    const repeated = await request(app, '/station/receive', { body: input });
+    assert.equal(repeated.body.receipt.receiptId, received.body.receipt.receiptId);
+    assert.equal(repeated.body.readback.domainVerified, false);
+  });
+}

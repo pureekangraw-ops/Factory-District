@@ -44,11 +44,11 @@ function required(value, label) {
   return text;
 }
 
-function runResult({ workId, evidenceRef, returnRef, observedAt }) {
+function runResult({ workId, checkpointId, evidenceRef, returnRef, observedAt }) {
   return Object.freeze({
     run: Object.freeze({
       workId,
-      checkpointId: 'CP-05',
+      checkpointId,
       executionState: 'COMPLETE',
       returnState: 'RETURNED',
       verificationRef: evidenceRef,
@@ -93,6 +93,7 @@ export function createDwarfLogicTraineeRunner({
       return Object.freeze({
         ...runResult({
           workId,
+          checkpointId,
           evidenceRef: migration.evidenceRef,
           returnRef: `${migration.evidenceRef}#return`,
           observedAt,
@@ -106,6 +107,18 @@ export function createDwarfLogicTraineeRunner({
           authorityTransferred: false,
         }),
         retryable: false,
+      });
+    }
+
+    // Placement proves only the explicitly requested training-placement action.
+    // A generic LOGIC request must never be completed by this bounded runner.
+    if (work?.intent !== 'PLACE_DWARF_LOGIC_TRAINEE') {
+      return Object.freeze({
+        retryable: false,
+        run: Object.freeze({ workId, checkpointId, executionState: 'UNKNOWN',
+          returnState: 'UNKNOWN', verificationRef: null, returnRef: null,
+          evidenceRefs: Object.freeze([]) }),
+        failure: Object.freeze({ code: 'DWARF_LOGIC_INTENT_NOT_SUPPORTED' }),
       });
     }
 
@@ -170,7 +183,7 @@ export function createDwarfLogicTraineeRunner({
     }
 
     return Object.freeze({
-      ...runResult({ workId, evidenceRef, returnRef, observedAt: clock() }),
+      ...runResult({ workId, checkpointId, evidenceRef, returnRef, observedAt: clock() }),
       trainee: placement,
       storageVersion: persisted.version,
       retryable: false,

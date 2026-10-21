@@ -51,7 +51,7 @@ The full-chain test calls the actual Worker entry point, HMAC verifier, runtime,
 
 ## Known open work, deliberately not duplicated
 
-- **PR #31** (`542aa528d65e569c5e47bccf8bab4e36f60109bb`) already owns the runner's hardcoded `CP-05` return and missing Worker checkpoint equality check. This branch does not fix or mask that gap. The new complete-chain test uses `CP-05` intentionally. Arbitrary-checkpoint end-to-end completion is **not verified** here. Do not take PR #31's removal of bounded LOGIC registration as part of this patch.
+- **Checkpoint follow-up:** this branch now returns the requested Work checkpoint from placement/import, validates Worker result correlation, and preserves kernel phase checkpoints separately from `workCheckpointId`. It includes the bounded checkpoint correction relevant to PR #31 without taking its removal of LOGIC training registration. PR #31 must be reconciled rather than merged blindly; its direct phase-to-Work comparison is incompatible with kernel runners.
 - **PR #18** owns operator retry budget/error/authority isolation changes. Those concerns remain outside this independent patch; no claim that all configured retry policies are hardened.
 - Existing persisted receipts are still authoritative; this patch does not add receipt-signing or retroactively rewrite old records.
 - No GO Brain Factory execution, real Work dispatch, real owner receipt, merge, production deployment, or production storage write was performed for this work.
@@ -84,3 +84,31 @@ The existing production binding remains `factory`. The preview bucket is shared 
 4. Inspect GitHub `test` on the exact head, plus the independently reviewed source/tree. Record the CI URL and final conclusion in the Draft PR.
 5. Verify the automatically built preview's exact commit and `RECORD_STORE` binding read-only. Do not send it work.
 6. Resolve the separate checkpoint and configurable-retry work before claiming a general-purpose production runner is ready. BIG/owner approval remains necessary for merge, deployment and real execution.
+
+## Review follow-up — Work checkpoint and intent integrity (2026-10-22)
+
+The review reproduced two pre-existing false-completion cases at `6cecc383`:
+(1) external checkpoint `WORK:CP-99` accepted with machine checkpoint `CP-05`;
+(2) `logic_create` receiving only a training placement but `domainVerified: true`.
+
+- Placement and Golden Case import now return the actual requested checkpoint.
+- Worker completion requires matching Work ID and Work checkpoint. Kernel runs
+  retain ingress correlation in `run.workCheckpointId`; `run.checkpointId` keeps
+  its existing CP-01 through CP-04 lifecycle meaning. Simple/legacy runners may
+  return the Work checkpoint directly in `run.checkpointId`. An explicitly null,
+  missing-value or conflicting `workCheckpointId` cannot fall back to a phase.
+- The bounded runner only performs placement for exact
+  `PLACE_DWARF_LOGIC_TRAINEE`. Unsupported intents (including generic `EXECUTE`,
+  `logic_create`, and Workbench training) remain UNKNOWN without placement
+  reads/writes or completion evidence. Existing Golden Case import is retained.
+- Existing LOGIC registration, V1 evidence validation, ownership, HMAC and
+  receipt-loss recovery remain in place. No CODE/VISUAL providers are registered.
+
+Validation: before implementation, 13/26 focused cases failed for the expected
+checkpoint/false-completion behaviors. After implementation, full `npm test`
+passes 205/205 locally. The full-chain fixture now uses `LOCAL-E2E:WORK-CP-99`
+instead of CP-05. A real in-process kernel lifecycle reaches CP-04 while
+preserving and persisting the external Work checkpoint through Worker readback.
+These are local synthetic effects; latest-head CI and deployment are separate
+checks. Retry hardening in #18, server execution timeout/cancellation, staging
+source/bindings and real execution remain outside this follow-up acceptance.

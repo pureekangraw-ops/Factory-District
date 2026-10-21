@@ -17,11 +17,20 @@ function defaultHandlers(domainRunners) {
     const execution = await operator.run({ work: handoff, domain, machineId: `${domain}-MACHINE` });
     const result = execution.result;
     const run = result?.run;
-    const verified = execution.status === 'RETURNED' && run?.workId === handoff.workId
+    // Kernel runs carry an explicit ingress checkpoint while checkpointId advances
+    // through internal phases. Legacy/simple runners return the Work checkpoint
+    // directly. An explicit missing/conflicting correlation must never fall back.
+    const workCheckpointId = Object.hasOwn(run || {}, 'workCheckpointId')
+      ? run.workCheckpointId : run?.checkpointId;
+    const correlationMismatch = run?.workId !== handoff.workId
+      || workCheckpointId !== handoff.checkpointId;
+    const verified = execution.status === 'RETURNED' && !correlationMismatch
       && Boolean(run.verificationRef) && Boolean(run.returnRef)
       && Array.isArray(run.evidenceRefs) && run.evidenceRefs.length > 0
       && run.evidenceRefs.every(ref => typeof ref === 'string' && ref.trim());
-    return { status: verified ? 'RETURNED' : 'UNKNOWN', reason: verified ? null : 'MACHINE_RESULT_UNVERIFIED', completed: Boolean(verified), machineResult: result || null, execution };
+    const reason = verified ? null : correlationMismatch ? 'MACHINE_WORK_CHECKPOINT_MISMATCH'
+      : result?.failure?.code || 'MACHINE_RESULT_UNVERIFIED';
+    return { status: verified ? 'RETURNED' : 'UNKNOWN', reason, completed: Boolean(verified), machineResult: result || null, execution };
   }]));
 }
 
