@@ -16,5 +16,8 @@
     {
       "binding": "LOADER"
     }
-  ]
+  ],
+  "vars": {
+    "ARTIFACT_BUCKET": "factory-district-preview"
+  }
 }

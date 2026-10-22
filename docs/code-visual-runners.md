@@ -151,3 +151,14 @@ Local and exact-source GitHub CI: 249/249 tests and syntax PASS. CI run
 39665109372 tested source aa21e071; PR merge tree matched the deployed-source
 tree d2cf58592c49b9dcfa9efb42e4fcd1c2a1c5077a. The later evidence-only commit
 adds these readbacks without redeploying the same executable code.
+
+
+## Primary integration (owner authorized 2026-10-22)
+
+Use `factory-district` as the primary development/deployment target. Do not provision new staging environments by default. Preserve historical staging evidence; it is evidence for that version and environment only.
+
+`wrangler.jsonc` binds CODE_PROVIDER and VISUAL_PROVIDER to the private `factory-machinery` Worker, using CodeProvider and VisualProvider entrypoints. `wrangler.edge-provider.jsonc` binds ARTIFACTS to the production `factory` bucket with explicit ARTIFACT_BUCKET= factory, Browser Run and Worker Loader. Deploy the private provider before Factory. GitHub's main deployment workflow enforces that order. Native deployments must preserve existing Factory secret bindings, and source identity must match the deployed Git commit.
+
+Production input references must be `r2://factory/edge-inputs/<name>.json#sha256=<digest>`. Preview-bucket references are rejected before effects. The scope remains bounded: CODE executes one isolated Worker ES module with a precise patch and HTTP assertions; VISUAL produces static card HTML/PNG. CODE sandbox deployment does not publish an arbitrary application endpoint. `DEPLOY:CODE` remains required. PANTHEON's existing LOGIC authority is unchanged; CODE/VISUAL require the existing authenticated City rail and a valid Work Pass.
+
+The primary configuration disables preview URLs and automatic branch-preview storage. Existing staging configs are retained for historical reproducibility and are not invoked by the main deployment path. No secret rotation or new caller authority is part of promotion. Health READY confirms runner registration only; existing staging execution receipts do not become production execution receipts.

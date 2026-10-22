@@ -32,6 +32,14 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Deploy private CODE and VISUAL provider
+        uses: cloudflare/wrangler-action@v3
+        with:
+          wranglerVersion: '4.147.0'
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --config wrangler.edge-provider.jsonc
+
       - name: Deploy Factory Worker
         uses: cloudflare/wrangler-action@v3
         with:
@@ -63,7 +71,7 @@ jobs:
             if (h.service !== "factory-district" || h.stationId !== "FACTORY-STATION") fail("Factory identity mismatch");
             if (h.sourceSha !== process.env.EXPECTED_SHA || h.runtimeSha !== process.env.EXPECTED_SHA) fail("Live Factory source SHA mismatch");
             if (h.storage?.status !== "READY" || h.transport?.status !== "READY") fail("Factory storage/rail not ready");
-            if (h.machinery?.LOGIC?.status !== "READY") fail("Factory LOGIC runner not ready");
+            for (const domain of ["CODE","VISUAL","LOGIC"]) if (h.machinery?.[domain]?.status !== "READY") fail(`Factory ${domain} runner not ready`);
             console.log(JSON.stringify({service:h.service,sourceSha:h.sourceSha,station:h.status,storage:h.storage.status,transport:h.transport.status,logic:h.machinery.LOGIC.status}));
           '
           UNSIGNED_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --request POST "$BASE/station/receive")"

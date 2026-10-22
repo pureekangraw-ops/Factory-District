@@ -2,12 +2,38 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "factory-district",
   "main": "src/worker.mjs",
-  "build": { "command": "node scripts/write-source-identity.mjs" },
-  "compatibility_date": "2026-10-05",
-  "r2_buckets": [{ "binding": "RECORD_STORE", "bucket_name": "factory" }],
-  "previews": {
-    "r2_buckets": [{ "binding": "RECORD_STORE", "bucket_name": "factory-district-preview" }]
+  "build": {
+    "command": "node scripts/write-source-identity.mjs"
   },
-  "version_metadata": { "binding": "CF_VERSION_METADATA" },
-  "observability": { "enabled": true }
+  "compatibility_date": "2026-10-05",
+  "r2_buckets": [
+    {
+      "binding": "RECORD_STORE",
+      "bucket_name": "factory"
+    }
+  ],
+  "version_metadata": {
+    "binding": "CF_VERSION_METADATA"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "preview_urls": false,
+  "services": [
+    {
+      "binding": "CODE_PROVIDER",
+      "service": "factory-machinery",
+      "entrypoint": "CodeProvider"
+    },
+    {
+      "binding": "VISUAL_PROVIDER",
+      "service": "factory-machinery",
+      "entrypoint": "VisualProvider"
+    }
+  ],
+  "vars": {
+    "CODE_TARGET": "CLOUDFLARE_WORKER",
+    "VISUAL_TARGET": "UI_WEB",
+    "VISUAL_MODE": "MENU"
+  }
 }
