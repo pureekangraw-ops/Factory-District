@@ -88,3 +88,13 @@ test('PANTHEON readback may not inspect City receipts',async()=>{
  const denied=await response(f.app,await signed('/station/readback/'+created.data.receipt.receiptId,{method:'GET'}));
  assert.equal(denied.status,403);
 });
+test('reserved exact L1 identity cannot execute legacy trainee through either rail principal',async()=>{
+ const f=worker(),id='task_d6c9e93a42fd4f339bb47d941428dd08',cp='cp-'+id;
+ const base=envelope(),body={...base,workId:id,checkpointId:cp,workPassRef:'work-pass://pantheon-'+id,workPass:{...base.workPass,passId:'pantheon-'+id,workId:id,checkpointId:cp}};
+ for(const auth of [{secret:PANTHEON_SECRET,client:'PANTHEON'},{secret:METRO_SECRET,client:'CITY'}]){
+  for(const path of ['/station/preflight','/station/receive']){
+   const r=await response(f.app,await signed(path,{body,...auth}));assert.notEqual(r.status,202);assert.equal(r.data.reason,'L1_TASK_RESERVED');
+  }
+ }
+ assert.equal(f.runs,0);
+});

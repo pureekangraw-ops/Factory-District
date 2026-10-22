@@ -1,0 +1,9 @@
+{
+  "evidence_kind": "LOCAL_FIXTURE_FROM_PARENT_READBACK_NOT_LIVE_EXECUTION",
+  "task_id": "task_d6c9e93a42fd4f339bb47d941428dd08",
+  "recorded_status": "QUEUED",
+  "recorded_latest_run_id": null,
+  "recorded_request_sha256": "de0038fe8be999fe6a1c725156cd9684ac4887127ef783a659148ccdf36d0b24",
+  "recorded_request_text": "FACTORY ACCEPTANCE TEST L1 — safe isolated artifact test only. Goal: produce a small deterministic text artifact containing exactly 'YGG FACTORY L1 PASS', Work/task identity and test timestamp; return source artifact reference, content digest, receipt and owner readback if supported. No customer data, no public publishing, no production application changes, no payment, no external communication. If no supported machine/authority for this exact artifact, fail closed with UNSUPPORTED or BLOCKED rather than substituting a LOGIC trainee placement or fabricating a receipt. This is a graded acceptance test; separate task creation from execution.",
+  "limitation": "Exact request bytes and recorded identity/hash supplied by parent read-only evidence. This local SQLite fixture is not a live queue, execution, receipt, artifact, or owner readback."
+}
