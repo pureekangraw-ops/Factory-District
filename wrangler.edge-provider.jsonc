@@ -1,0 +1,24 @@
+{
+  "name": "factory-machinery",
+  "main": "src/edge-provider-entry.mjs",
+  "compatibility_date": "2026-10-13",
+  "workers_dev": false,
+  "r2_buckets": [
+    {
+      "binding": "ARTIFACTS",
+      "bucket_name": "factory"
+    }
+  ],
+  "browser": {
+    "binding": "BROWSER"
+  },
+  "worker_loaders": [
+    {
+      "binding": "LOADER"
+    }
+  ],
+  "vars": {
+    "ARTIFACT_BUCKET": "factory"
+  },
+  "preview_urls": false
+}

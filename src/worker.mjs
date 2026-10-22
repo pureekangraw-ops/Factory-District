@@ -3,6 +3,7 @@ import { createFactoryRuntime } from './factory-runtime.mjs';
 import { createPixieOperator } from './pixie-autonomous.mjs';
 import { BUILD_SOURCE_SHA } from './build-source-identity.mjs';
 import { authenticateRailRequest, railTransportHealth, validatePantheonHandoff } from './rail-auth.mjs';
+import { createConfiguredMachinery } from './configured-machinery.mjs';
 import { createDwarfLogicTraineeRunner } from './dwarf-logic-trainee.mjs';
 
 function json(body, status = 200) {
@@ -17,11 +18,20 @@ function defaultHandlers(domainRunners) {
     const execution = await operator.run({ work: handoff, domain, machineId: `${domain}-MACHINE` });
     const result = execution.result;
     const run = result?.run;
-    const verified = execution.status === 'RETURNED' && run?.workId === handoff.workId
+    // Kernel runs carry an explicit ingress checkpoint while checkpointId advances
+    // through internal phases. Legacy/simple runners return the Work checkpoint
+    // directly. An explicit missing/conflicting correlation must never fall back.
+    const workCheckpointId = Object.hasOwn(run || {}, 'workCheckpointId')
+      ? run.workCheckpointId : run?.checkpointId;
+    const correlationMismatch = run?.workId !== handoff.workId
+      || workCheckpointId !== handoff.checkpointId;
+    const verified = execution.status === 'RETURNED' && !correlationMismatch
       && Boolean(run.verificationRef) && Boolean(run.returnRef)
       && Array.isArray(run.evidenceRefs) && run.evidenceRefs.length > 0
       && run.evidenceRefs.every(ref => typeof ref === 'string' && ref.trim());
-    return { status: verified ? 'RETURNED' : 'UNKNOWN', reason: verified ? null : 'MACHINE_RESULT_UNVERIFIED', completed: Boolean(verified), machineResult: result || null, execution };
+    const reason = verified ? null : correlationMismatch ? 'MACHINE_WORK_CHECKPOINT_MISMATCH'
+      : result?.failure?.code || 'MACHINE_RESULT_UNVERIFIED';
+    return { status: verified ? 'RETURNED' : 'UNKNOWN', reason, completed: Boolean(verified), machineResult: result || null, execution };
   }]));
 }
 
@@ -147,7 +157,7 @@ export default {
   fetch(request, env) {
     const recordStore = env.RECORD_STORE ? createR2RecordStore(env.RECORD_STORE) : undefined;
     const runtimeEnv = { ...env, SOURCE_SHA: BUILD_SOURCE_SHA !== 'UNKNOWN' ? BUILD_SOURCE_SHA : env.SOURCE_SHA || 'UNKNOWN' };
-    const domainRunners = recordStore ? { LOGIC: createDwarfLogicTraineeRunner({ store: recordStore }) } : {};
+    const domainRunners = recordStore ? { ...createConfiguredMachinery(env, recordStore), LOGIC: createDwarfLogicTraineeRunner({ store: recordStore }) } : {};
     return createFactoryWorker(runtimeEnv, { recordStore, domainRunners }).fetch(request);
   },
 };

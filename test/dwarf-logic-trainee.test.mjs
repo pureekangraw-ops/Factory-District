@@ -13,7 +13,7 @@ function work() {
     workId: 'WORK-DWARF-LOGIC',
     checkpointId: 'WORK-DWARF-LOGIC:CP-01',
     ownerDomain: 'LOGIC',
-    intent: 'EXECUTE',
+    intent: 'PLACE_DWARF_LOGIC_TRAINEE',
     inputRefs: ['chat://dwarf-logic-training'],
   };
 }
@@ -29,6 +29,7 @@ test('DWARF is placed at LOGIC DEVELOPMENT_BENCH without production authority', 
   assert.equal(result.run.executionState, 'COMPLETE');
   assert.equal(result.run.returnState, 'RETURNED');
   assert.equal(result.run.workId, 'WORK-DWARF-LOGIC');
+  assert.equal(result.run.checkpointId, work().checkpointId);
   assert.equal(result.trainee.dwarfId, DWARF_ID);
   assert.equal(result.trainee.placement.domain, 'LOGIC');
   assert.equal(result.trainee.placement.bench, 'DEVELOPMENT_BENCH');

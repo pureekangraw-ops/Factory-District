@@ -13,9 +13,13 @@ CODE/VISUAL/LOGIC runners through the existing PIXIE operator. Completed work
 must preserve Work identity, return successfully, and carry machine evidence.
 Machine output is persisted with the receipt and returned by Station readback.
 
-Production provider runners are not registered in the default Worker entrypoint.
-Operational execution therefore returns `UNKNOWN / MACHINE_NOT_REGISTERED`.
-Health reports readiness separately for each domain. Only the explicit
+The default Worker registers CODE/VISUAL only when deployment-owned provider
+bindings and valid target configuration are present. Without them, those domains
+return `UNKNOWN / MACHINE_NOT_REGISTERED`. Bounded LOGIC training remains
+registered. Health reports registration separately for each domain; READY alone
+is not a live provider or execution verification. See
+[configured CODE/VISUAL runners](docs/code-visual-runners.md) for the provider
+contract, durable state and remaining staging acceptance. Only the explicit
 `LIVE_E2E_BOUNDARY_HANDOFF` intent exercises the boundary without executing a
 domain; its `domainCompleted` remains false. This is not production machinery
 acceptance.

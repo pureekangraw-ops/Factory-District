@@ -23,15 +23,23 @@ function evidenceFor(step, result) {
 }
 
 function requireStep(result, step) {
-  if (!result || ![CODE_STATUS.PASS, CODE_STATUS.READY, 'SUCCESS', 'VERIFIED', 'ACCEPTED'].includes(result.status)) {
+  const passed = [CODE_STATUS.PASS, 'SUCCESS', 'VERIFIED'].includes(result?.status)
+    || (step === CODE_STEP.INSPECT_REPOSITORY && result?.status === CODE_STATUS.READY);
+  if (!passed) {
     const failureClass = step === CODE_STEP.RUNTIME_VERIFY || step === CODE_STEP.CI_CHECKPOINT ? FAILURE_CLASS.VERIFICATION_FAILED : FAILURE_CLASS.EXECUTION_ERROR;
     throw new CodeMachineError(`${step}_NOT_PASSED`, failureClass);
   }
   return result;
 }
 
+function requireReference(result, field, step) {
+  if (typeof result?.[field] !== 'string' || !result[field].trim())
+    throw new CodeMachineError(`${step}_${field}_REQUIRED`, FAILURE_CLASS.VERIFICATION_FAILED);
+}
+
 function checkSha(result, expectedSha, step) {
-  if (result?.sourceSha && result.sourceSha !== expectedSha) throw new CodeMachineError(`${step}_SOURCE_SHA_MISMATCH`, FAILURE_CLASS.VERSION_MISMATCH, 'BLOCKED');
+  requireReference(result, 'sourceSha', step);
+  if (result.sourceSha !== expectedSha) throw new CodeMachineError(`${step}_SOURCE_SHA_MISMATCH`, FAILURE_CLASS.VERSION_MISMATCH, 'BLOCKED');
 }
 
 export async function runCodeMachine({ kernel, adapter, work, actorRef = 'PIXIE' } = {}) {
@@ -89,17 +97,22 @@ export async function runCodeMachine({ kernel, adapter, work, actorRef = 'PIXIE'
     run = await kernel.interpret(run.runId, { planRef: `plan://code/${run.workId}`, actorRef });
     run = await kernel.startAttempt(run.runId, { executorRef: `code-machine://${adapter.target}`, actorRef });
     const repository = await call(CODE_STEP.INSPECT_REPOSITORY, { work, run });
+    requireReference(repository, 'sourceSha', CODE_STEP.INSPECT_REPOSITORY);
     const plan = await call(CODE_STEP.PLAN_CHANGE, { work, run, repository });
     const execution = await call(CODE_STEP.EXECUTE_CHANGE, { work, run, repository, plan });
     const tests = await call(CODE_STEP.RUN_TESTS, { work, run, repository, plan, execution });
     const build = await call(CODE_STEP.BUILD, { work, run, repository, execution, tests });
+    requireReference(build, 'artifactRef', CODE_STEP.BUILD);
     checkSha(build, repository.sourceSha, CODE_STEP.BUILD);
     const artifact = await call(CODE_STEP.INSPECT_ARTIFACT, { work, run, repository, build });
+    requireReference(artifact, 'artifactRef', CODE_STEP.INSPECT_ARTIFACT);
     checkSha(artifact, repository.sourceSha, CODE_STEP.INSPECT_ARTIFACT);
     const ci = await call(CODE_STEP.CI_CHECKPOINT, { work, run, repository, tests, build, artifact });
     const deployment = await call(CODE_STEP.DEPLOY, { work, run, repository, artifact, ci });
+    requireReference(deployment, 'deploymentRef', CODE_STEP.DEPLOY);
     checkSha(deployment, repository.sourceSha, CODE_STEP.DEPLOY);
     const runtime = await call(CODE_STEP.RUNTIME_VERIFY, { work, run, repository, deployment });
+    requireReference(runtime, 'runtimeSha', CODE_STEP.RUNTIME_VERIFY);
     const runtimeMatches = runtime.runtimeSha === repository.sourceSha;
     evidence.push({ kind: 'CODE_RUNTIME_VERIFICATION', verificationScope: 'RUNTIME', source: { systemId: 'CODE_MACHINE', surfaceId: CODE_STEP.RUNTIME_VERIFY }, contentRef: runtime.evidenceRef || runtime.runtimeRef || deployment.deploymentRef, metadata: { sourceSha: repository.sourceSha, runtimeSha: runtime.runtimeSha, matches: runtimeMatches } });
     run = await kernel.beginVerification(run.runId, { actorRef });

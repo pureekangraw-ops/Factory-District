@@ -1,0 +1,32 @@
+{
+  "name": "factory-code-visual-staging",
+  "main": "src/staging-entry.mjs",
+  "compatibility_date": "2026-10-13",
+  "workers_dev": true,
+  "build": {
+    "command": "node scripts/write-source-identity.mjs"
+  },
+  "r2_buckets": [
+    {
+      "binding": "RECORD_STORE",
+      "bucket_name": "factory-district-preview"
+    }
+  ],
+  "services": [
+    {
+      "binding": "CODE_PROVIDER",
+      "service": "factory-machinery-staging",
+      "entrypoint": "CodeProvider"
+    },
+    {
+      "binding": "VISUAL_PROVIDER",
+      "service": "factory-machinery-staging",
+      "entrypoint": "VisualProvider"
+    }
+  ],
+  "vars": {
+    "CODE_TARGET": "CLOUDFLARE_WORKER",
+    "VISUAL_TARGET": "UI_WEB",
+    "VISUAL_MODE": "MENU"
+  }
+}

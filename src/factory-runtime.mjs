@@ -7,6 +7,7 @@ import {
 } from './contract.mjs';
 import { createPixie } from './pixie.mjs';
 import { assertDurableStore } from './durable-store.mjs';
+import { verifyDwarfLogicPlacement } from './dwarf-logic-trainee.mjs';
 
 function requiredString(value, name) {
   if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${name}_REQUIRED`);
@@ -199,19 +200,16 @@ export function createFactoryRuntime({
     if (existing) return { status: 'RECORDED', receipt: existing.receipt, readback: existing.readback, recovered: false };
     if (handoff.ownerDomain !== 'LOGIC' || handoff.intent !== 'PLACE_DWARF_LOGIC_TRAINEE')
       return { status: 'UNKNOWN', reason: 'RECONCILIATION_REQUIRES_MANUAL_REVIEW', recovered: false, receiptId: claim.receiptId };
+    // A prior placement cannot override gates that prevented this intake from
+    // executing. Keep the same eligibility checks as receive()/PIXIE.
+    if (handoff.expectedSourceSha && handoff.expectedSourceSha !== sourceSha)
+      return { status: 'UNKNOWN', reason: 'SHA_MISMATCH', recovered: false, receiptId: claim.receiptId };
+    if (!handoff.scope.includes('EXECUTE:LOGIC'))
+      return { status: 'UNKNOWN', reason: 'SCOPE_NOT_GRANTED', recovered: false, receiptId: claim.receiptId };
     const key = `logic/trainees/DWARF-01/${handoff.workId}/${handoff.checkpointId}`;
     const source = await store.get(key);
     const proof = source?.value;
-    const verified = source?.version >= 1
-      && proof?.schema === 'DWARF_LOGIC_TRAINEE_V1'
-      && proof?.dwarfId === 'DWARF-01'
-      && proof?.workId === handoff.workId && proof?.checkpointId === handoff.checkpointId
-      && proof?.actorRef === 'PIXIE'
-      && proof?.status === 'PLACED_FOR_TRAINING'
-      && proof?.placement?.domain === 'LOGIC'
-      && proof?.placement?.bench === 'DEVELOPMENT_BENCH'
-      && proof?.placement?.productionAuthority === false
-      && proof?.authority?.authorityTransferred === false;
+    const verified = verifyDwarfLogicPlacement(source, { work: handoff });
     if (!verified) return { status: 'UNKNOWN', reason: 'DURABLE_LOGIC_EFFECT_UNVERIFIED',
       recovered: false, receiptId: claim.receiptId };
     const evidenceRef = `r2://factory/records/${key}`,time=clock();

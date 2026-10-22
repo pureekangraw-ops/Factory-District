@@ -14,17 +14,41 @@ export const DWARF_LOGIC_PLACEMENT = Object.freeze({
   productionAuthority: false,
 });
 
+// A stored value is evidence only when its envelope and bounded training state
+// match the current request. Use the same predicate during execution and
+// receipt-loss recovery so neither path can promote contradictory V1 records.
+export function verifyDwarfLogicPlacement(record, { work, actorRef = 'PIXIE' } = {}) {
+  const proof = record?.value;
+  const inputRefs = Array.isArray(work?.inputRefs) ? work.inputRefs : [];
+  return Number.isSafeInteger(record?.version) && record.version >= 1
+    && record.key === `logic/trainees/${DWARF_ID}/${work?.workId}/${work?.checkpointId}`
+    && proof?.schema === 'DWARF_LOGIC_TRAINEE_V1'
+    && proof?.dwarfId === DWARF_ID
+    && proof?.workId === work?.workId && proof?.checkpointId === work?.checkpointId
+    && proof?.actorRef === actorRef
+    && proof?.status === 'PLACED_FOR_TRAINING'
+    && proof?.qualificationStatus === 'PENDING_OWNER'
+    && proof?.placement?.domain === DWARF_LOGIC_PLACEMENT.domain
+    && proof?.placement?.bench === DWARF_LOGIC_PLACEMENT.bench
+    && proof?.placement?.mode === DWARF_LOGIC_PLACEMENT.mode
+    && proof?.placement?.productionAuthority === false
+    && ['changeWork', 'merge', 'deploy', 'acceptCurrent', 'authorityTransferred']
+      .every(flag => proof?.authority?.[flag] === false)
+    && Array.isArray(proof?.inputRefs)
+    && JSON.stringify(proof.inputRefs) === JSON.stringify(inputRefs);
+}
+
 function required(value, label) {
   const text = String(value ?? '').trim();
   if (!text) throw new TypeError(`${label}_REQUIRED`);
   return text;
 }
 
-function runResult({ workId, evidenceRef, returnRef, observedAt }) {
+function runResult({ workId, checkpointId, evidenceRef, returnRef, observedAt }) {
   return Object.freeze({
     run: Object.freeze({
       workId,
-      checkpointId: 'CP-05',
+      checkpointId,
       executionState: 'COMPLETE',
       returnState: 'RETURNED',
       verificationRef: evidenceRef,
@@ -69,6 +93,7 @@ export function createDwarfLogicTraineeRunner({
       return Object.freeze({
         ...runResult({
           workId,
+          checkpointId,
           evidenceRef: migration.evidenceRef,
           returnRef: `${migration.evidenceRef}#return`,
           observedAt,
@@ -82,6 +107,18 @@ export function createDwarfLogicTraineeRunner({
           authorityTransferred: false,
         }),
         retryable: false,
+      });
+    }
+
+    // Placement proves only the explicitly requested training-placement action.
+    // A generic LOGIC request must never be completed by this bounded runner.
+    if (work?.intent !== 'PLACE_DWARF_LOGIC_TRAINEE') {
+      return Object.freeze({
+        retryable: false,
+        run: Object.freeze({ workId, checkpointId, executionState: 'UNKNOWN',
+          returnState: 'UNKNOWN', verificationRef: null, returnRef: null,
+          evidenceRefs: Object.freeze([]) }),
+        failure: Object.freeze({ code: 'DWARF_LOGIC_INTENT_NOT_SUPPORTED' }),
       });
     }
 
@@ -125,12 +162,9 @@ export function createDwarfLogicTraineeRunner({
 
     const persisted = await durable.get(key);
     const placement = persisted?.value;
-    const verified = placement?.dwarfId === DWARF_ID
-      && placement?.workId === workId
-      && placement?.checkpointId === checkpointId
-      && placement?.placement?.domain === 'LOGIC'
-      && placement?.placement?.bench === 'DEVELOPMENT_BENCH'
-      && placement?.placement?.productionAuthority === false;
+    const verified = verifyDwarfLogicPlacement(persisted, {
+      work: { ...work, workId, checkpointId }, actorRef,
+    });
 
     if (!verified) {
       return Object.freeze({
@@ -149,7 +183,7 @@ export function createDwarfLogicTraineeRunner({
     }
 
     return Object.freeze({
-      ...runResult({ workId, evidenceRef, returnRef, observedAt: clock() }),
+      ...runResult({ workId, checkpointId, evidenceRef, returnRef, observedAt: clock() }),
       trainee: placement,
       storageVersion: persisted.version,
       retryable: false,

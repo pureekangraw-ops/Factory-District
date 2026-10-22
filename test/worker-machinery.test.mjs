@@ -41,7 +41,7 @@ test('Worker runs PIXIE machinery and persists its correlated output for readbac
   let received;
   const worker = createFactoryWorker(workerEnv, { recordStore: store(), domainRunners: { CODE: async ({ work, actorRef }) => {
     received = { work, actorRef };
-    return { run: { workId: work.workId, checkpointId: 'CP-05', executionState: 'COMPLETE', returnState: 'RETURNED', verificationRef: 'verification-1', returnRef: 'return-1', evidenceRefs: ['evidence://machine-1'] }, output: { artifactRef: 'artifact://machine-1' } };
+    return { run: { workId: work.workId, checkpointId: handoff.checkpointId, executionState: 'COMPLETE', returnState: 'RETURNED', verificationRef: 'verification-1', returnRef: 'return-1', evidenceRefs: ['evidence://machine-1'] }, output: { artifactRef: 'artifact://machine-1' } };
   } } });
   const body = await (await worker.fetch(await request())).json();
   assert.equal(received.actorRef, 'PIXIE');
@@ -55,12 +55,61 @@ test('Worker runs PIXIE machinery and persists its correlated output for readbac
   assert.equal(persisted.workPassRef, handoff.workPassRef);
 });
 
-for (const patch of [{ workId: 'OTHER' }, { returnState: 'PENDING' }, { evidenceRefs: [] }, { verificationRef: null }, { returnRef: null }]) {
+for (const patch of [{ workId: 'OTHER' }, { checkpointId: 'OTHER' }, { checkpointId: undefined }, { returnState: 'PENDING' }, { evidenceRefs: [] }, { verificationRef: null }, { returnRef: null }]) {
   test(`Worker does not complete unverifiable machinery ${JSON.stringify(patch)}`, async () => {
-    const worker = createFactoryWorker(workerEnv, { recordStore: store(), domainRunners: { CODE: async () => ({ run: { workId: handoff.workId, checkpointId: 'CP-05', executionState: 'COMPLETE', returnState: 'RETURNED', verificationRef: 'verification-1', returnRef: 'return-1', evidenceRefs: ['evidence://1'], ...patch } }) } });
+    const worker = createFactoryWorker(workerEnv, { recordStore: store(), domainRunners: { CODE: async () => ({ run: { workId: handoff.workId, checkpointId: handoff.checkpointId, executionState: 'COMPLETE', returnState: 'RETURNED', verificationRef: 'verification-1', returnRef: 'return-1', evidenceRefs: ['evidence://1'], ...patch } }) } });
     const body = await (await worker.fetch(await request())).json();
     assert.equal(body.readback.domainCompleted, false);
     assert.equal(body.receipt.status, 'UNKNOWN');
     assert.equal(body.readback.workPassRef, handoff.workPassRef);
   });
 }
+
+for (const [label, correlation, expected] of [
+  ['matching', handoff.checkpointId, true], ['wrong', 'OTHER', false],
+  ['null', null, false], ['undefined', undefined, false],
+]) {
+  test(`Worker checks explicit Work checkpoint ${label} independently of machine phase`, async () => {
+    const worker = createFactoryWorker(workerEnv, { recordStore: store(), domainRunners: { CODE: async () => ({
+      run: { workId: handoff.workId, checkpointId: handoff.checkpointId,
+        workCheckpointId: correlation, executionState: 'COMPLETE', returnState: 'RETURNED',
+        verificationRef: 'verification://local', returnRef: 'return://local', evidenceRefs: ['evidence://local'] },
+    }) } });
+    const result = await (await worker.fetch(await request())).json();
+    assert.equal(result.readback.domainVerified, expected);
+    if (!expected) assert.equal(result.readback.reason, 'MACHINE_WORK_CHECKPOINT_MISMATCH');
+  });
+}
+
+test('Worker accepts real kernel completion with a separate ingress checkpoint and CP-04 phase', async () => {
+  const { createMachineKernel } = await import('../src/machine-kernel.mjs');
+  const { createInMemoryPersistence } = await import('./support/in-memory-persistence.mjs');
+  const persistence = createInMemoryPersistence();
+  const kernel = createMachineKernel({ persistence });
+  const worker = createFactoryWorker(workerEnv, { recordStore: store(), domainRunners: { CODE: async ({ work }) => {
+    let run = await kernel.receive({
+      runId: 'LOCAL-KERNEL', workId: work.workId, checkpointId: work.checkpointId,
+      machineId: 'CODE-MACHINE', machineVersion: '0.1.0', domain: 'CODE',
+      ingress: { systemId: 'CITY', surfaceType: 'STATION', surfaceId: 'CITY' },
+      destination: { systemId: 'FACTORY', surfaceType: 'OWNER', surfaceId: 'CODE', ownerDomain: 'CODE' },
+      transportRef: { kind: 'RAIL', linkId: 'LOCAL', trustBoundaryRef: 'LOCAL' },
+      requestedBy: { actorId: 'GO', authorityRef: 'LOCAL', requestedAt: 'local' },
+      subject: { subjectId: 'LOCAL', subjectType: 'CODE_WORK', ownerSystem: 'CODE', lifecycleAuthorityRef: 'LOCAL' },
+    });
+    assert.equal(run.workCheckpointId, work.checkpointId);
+    await kernel.interpret(run.runId);
+    await kernel.startAttempt(run.runId, { executorRef: 'local://executor' });
+    await kernel.beginVerification(run.runId);
+    await kernel.verify(run.runId, { evidence: [{ kind: 'LOCAL', verificationScope: 'EXECUTION',
+      source: { systemId: 'LOCAL' }, contentRef: 'fixture://verified' }], verification: { status: 'PASS' } });
+    run = await kernel.returnRun(run.runId);
+    assert.equal(run.checkpointId, 'CP-04');
+    assert.equal(run.workCheckpointId, work.checkpointId);
+    return { run };
+  } } });
+  const result = await (await worker.fetch(await request())).json();
+  assert.equal(result.readback.domainVerified, true);
+  assert.equal(result.readback.machineResult.run.checkpointId, 'CP-04');
+  assert.equal(result.readback.machineResult.run.workCheckpointId, handoff.checkpointId);
+  assert.equal((await kernel.load('LOCAL-KERNEL')).workCheckpointId, handoff.checkpointId);
+});
