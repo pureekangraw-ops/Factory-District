@@ -1,3 +1,5 @@
+import {L1_TASK_ID} from './l1-text-artifact.mjs';
+import {createL1Runtime,L1_INTENT,L1_RECEIPT_ID} from './l1-runtime.mjs';
 import { createR2RecordStore } from './r2-record-store.mjs';
 import { createFactoryRuntime } from './factory-runtime.mjs';
 import { createPixieOperator } from './pixie-autonomous.mjs';
@@ -42,6 +44,7 @@ function logRailReject({ phase, reason }) {
 export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} } = {}) {
   const runtime = recordStore ? createFactoryRuntime({ sourceSha: env.SOURCE_SHA || env.COMMIT_SHA || 'UNKNOWN', domainHandlers: defaultHandlers(domainRunners), recordStore }) : null;
   const transport = railTransportHealth(env);
+  const l1=recordStore?createL1Runtime(recordStore,env.SOURCE_SHA||env.COMMIT_SHA||'UNKNOWN'):null;
 
   return Object.freeze({
     async fetch(request) {
@@ -76,7 +79,12 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
         }
         try {
           const input = JSON.parse(authenticated.body);
+          if(input?.workId===L1_TASK_ID && input.intent!==L1_INTENT)throw Error('L1_TASK_RESERVED');
           if (authenticated.principal === 'PANTHEON') validatePantheonHandoff(input);
+          if(input.intent===L1_INTENT){
+            if(authenticated.principal!=='PANTHEON')return json({status:'DENIED',reason:'PANTHEON_RAIL_REQUIRED'},403);
+            return json(await l1.preflight(input));
+          }
           const result = await runtime.preflight(input);
           return json(result, 200);
         } catch (error) {
@@ -97,7 +105,12 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
 
         try {
           const input = JSON.parse(authenticated.body);
+          if(input?.workId===L1_TASK_ID && input.intent!==L1_INTENT)throw Error('L1_TASK_RESERVED');
           if (authenticated.principal === 'PANTHEON') validatePantheonHandoff(input);
+          if(input.intent===L1_INTENT){
+            if(authenticated.principal!=='PANTHEON')return json({status:'DENIED',reason:'PANTHEON_RAIL_REQUIRED'},403);
+            return json(await l1.receive(input),202);
+          }
           const result = await runtime.receive(input);
           const status = result.receipt.status === 'DENIED' ? 403 : result.receipt.status === 'UNKNOWN' ? 409 : 202;
           return json(result, status);
@@ -119,7 +132,9 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
           return json({status:'DENIED',reason:'PANTHEON_RAIL_REQUIRED'},403);
         try {
           const input=JSON.parse(authenticated.body);
+          if(input?.workId===L1_TASK_ID && input.intent!==L1_INTENT)throw Error('L1_TASK_RESERVED');
           validatePantheonHandoff(input);
+          if(input.intent===L1_INTENT){const result=await l1.reconcile(input);return json(result,result.status==='UNKNOWN'?409:200);}
           const result=await runtime.reconcile(input);
           return json(result, result.status==='UNKNOWN'?409:200);
         }catch(error){
@@ -138,6 +153,11 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
         }
 
         const receiptId = decodeURIComponent(url.pathname.slice('/station/readback/'.length));
+        if(receiptId===L1_RECEIPT_ID){
+          if(authenticated.principal!=='PANTHEON')return json({status:'DENIED',reason:'PANTHEON_RAIL_REQUIRED'},403);
+          try{const result=await l1.readback();return json(result,result.reason==='RECEIPT_NOT_FOUND'?404:200);}
+          catch{return json({status:'UNKNOWN',reason:'L1_DURABLE_EVIDENCE_MISMATCH'},409);}
+        }
         const result = await runtime.readback(receiptId);
         if (authenticated.principal === 'PANTHEON' && result.reason !== 'RECEIPT_NOT_FOUND'
           && (result.actingActor !== 'PANTHEON'

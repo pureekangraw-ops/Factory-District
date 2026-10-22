@@ -1,4 +1,4 @@
-// Pure, unregistered artifact formatter. No storage, runner, rail or authority changes.
+// Pure artifact formatter used only by the exact-task L1 runtime; no I/O here.
 // Timestamp must come from a persisted execution claim, never from a retry's clock.
 export const L1_TASK_ID = 'task_d6c9e93a42fd4f339bb47d941428dd08';
 export const L1_REQUEST_SHA256 = 'de0038fe8be999fe6a1c725156cd9684ac4887127ef783a659148ccdf36d0b24';

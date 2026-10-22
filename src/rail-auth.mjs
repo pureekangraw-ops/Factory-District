@@ -1,3 +1,5 @@
+import {L1_INTENT,validateL1Fields} from './l1-runtime.mjs';
+import {L1_TASK_ID} from './l1-text-artifact.mjs';
 export const FACTORY_STATION_PROTOCOL = 'METROPOLIS_FACTORY_STATION_V2';
 export const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
@@ -71,13 +73,15 @@ export async function authenticateRailRequest(request, env = {}, {
 }
 
 export function validatePantheonHandoff(input) {
+  const l1=input?.intent===L1_INTENT;
+  if(l1)validateL1Fields(input);
   const task = input?.workId;
   const pass = input?.workPass;
   const isTask = typeof task === 'string' && /^task_[a-f0-9]{32}$/.test(task);
   const expectedCheckpoint = isTask ? `cp-${task}` : null;
   const allowed = isTask && input.checkpointId === expectedCheckpoint
-    && input.ownerDomain === 'LOGIC' && input.intent === 'PLACE_DWARF_LOGIC_TRAINEE'
-    && Array.isArray(input.scope) && input.scope.length === 1 && input.scope[0] === 'EXECUTE:LOGIC'
+    && (l1 || (task!==L1_TASK_ID && input.ownerDomain === 'LOGIC' && input.intent === 'PLACE_DWARF_LOGIC_TRAINEE'
+    && Array.isArray(input.scope) && input.scope.length === 1 && input.scope[0] === 'EXECUTE:LOGIC'))
     && Array.isArray(input.inputRefs) && input.inputRefs.length === 0
     && input.source?.stationId === 'PANTHEON' && input.source?.system === 'pantheon-workhub'
     && input.target?.stationId === 'FACTORY-STATION'
