@@ -2,6 +2,29 @@ import {L1_INTENT,validateL1Fields} from './l1-runtime.mjs';
 import {L1_TASK_ID} from './l1-text-artifact.mjs';
 export const FACTORY_STATION_PROTOCOL = 'METROPOLIS_FACTORY_STATION_V2';
 export const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
+export const GO_AUTH_PROBE_PURPOSE = 'GO_FACTORY_AUTH_PROBE_V1';
+
+// Accept owner-generated opaque secrets (hex, base64url, or printable password-
+// manager strings) without guessing entropy from an encoding. Never silently
+// trim/change the HMAC key. Intentionally inert placeholders always fail shut.
+export function goRailSecretConfigured(secret) {
+  if (typeof secret !== 'string' || secret !== secret.trim() ||
+      /[\u0000-\u001f\u007f]/.test(secret) ||
+      /^(?:PENDING[_-]|PLACEHOLDER|DUMMY|CHANGE[_-]?ME|REPLACE[_-]?ME|TEST[_-]?ONLY)/i.test(secret))
+    return false;
+  const size = new TextEncoder().encode(secret).length;
+  return size >= 32 && size <= 1024;
+}
+export async function signGoAuthProbe(secret, nonce, sourceSha) {
+  if (!goRailSecretConfigured(secret) ||
+      !/^[a-f0-9]{32}$/.test(nonce || '') || !/^[a-f0-9]{40}$/.test(sourceSha || ''))
+    throw new Error('GO_AUTH_PROBE_INVALID');
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret),
+    {name:'HMAC',hash:'SHA-256'}, false, ['sign']);
+  const message = GO_AUTH_PROBE_PURPOSE + '\n' + nonce + '\n' + sourceSha + '\nFACTORY-STATION';
+  const bytes = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message)));
+  return [...bytes].map(x => x.toString(16).padStart(2, '0')).join('');
+}
 
 const text = value => String(value ?? '').trim();
 
@@ -52,7 +75,7 @@ export async function authenticateRailRequest(request, env = {}, {
   const secret = text(principal === 'PANTHEON' ? env.PANTHEON_FACTORY_RAIL_SECRET
     : principal === 'GO' ? env.GO_FACTORY_RAIL_SECRET : env.METROPOLIS_FACTORY_RAIL_SECRET);
   // GO requires its own 256-bit key; inert placeholders must not authorize calls.
-  if (principal === 'GO' && !/^[a-f0-9]{64}$/i.test(secret))
+  if (principal === 'GO' && !goRailSecretConfigured(secret))
     return { ok: false, status: 503, reason: 'GO_FACTORY_RAIL_KEY_NOT_CONFIGURED' };
   if (!secret) return { ok: false, status: 503, reason: 'FACTORY_RAIL_SECRET_NOT_CONFIGURED' };
 
