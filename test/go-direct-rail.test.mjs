@@ -122,3 +122,43 @@ test('GO direct readback denied for a City-produced receipt',async()=>{
   assert.equal(denied.http,403);
   assert.equal(denied.json.reason,'GO_RAIL_READBACK_DENIED');
 });
+
+test('GO signed Factory receipt delivers exact bounded binary artifact bytes',async()=>{
+  const source='export default {fetch(){return new Response("real factory artifact")}}';
+  const bytes=new TextEncoder().encode(source);
+  const artifactRef='r2://factory/edge-results/GO/CP-01/main.js';
+  let fileReads=0;
+  const bucket={get:async key=>{
+    fileReads++;
+    assert.equal(key,'edge-results/GO/CP-01/main.js');
+    return {size:bytes.byteLength,arrayBuffer:async()=>bytes.buffer};
+  }};
+  const recordStore=createDurableStore({driver:createInMemoryDurableDriver()});
+  const app=createFactoryWorker({...localEnv,RECORD_STORE:bucket},{recordStore,
+    domainRunners:{CODE:async ({work})=>({run:{workId:work.workId,checkpointId:work.checkpointId,
+      executionState:'COMPLETE',returnState:'RETURNED',
+      verificationRef:'evidence://artifact',returnRef:'result://artifact',
+      evidenceRefs:['evidence://artifact'],resultRefs:[artifactRef]}})}});
+  const created=await response(app,await signed('/station/receive'));
+  assert.equal(created.http,202);
+  assert.equal(created.json.readback.domainVerified,true);
+  const receiptId=created.json.receipt.receiptId;
+  const received=await app.fetch(await signed('/station/go-artifact',{payload:{receiptId,artifactRef}}));
+  assert.equal(received.status,200);
+  assert.equal(await received.text(),source);
+  const actual=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))]
+    .map(x=>x.toString(16).padStart(2,'0')).join('');
+  assert.equal(received.headers.get('x-factory-artifact-sha256'),actual);
+  assert.equal(received.headers.get('x-factory-receipt-id'),receiptId);
+  assert.equal(received.headers.get('x-factory-source-sha'),SHA);
+  assert.equal(fileReads,1);
+  const unrelated=await response(app,await signed('/station/go-artifact',{
+    payload:{receiptId,artifactRef:'r2://factory/edge-results/GO/CP-01/secret.js'}}));
+  assert.equal(unrelated.http,403);
+  assert.equal(unrelated.json.reason,'ARTIFACT_NOT_IN_GO_RECEIPT');
+  const fromCity=await response(app,await signed('/station/go-artifact',{
+    payload:{receiptId,artifactRef},client:'CITY',key:localEnv.METROPOLIS_FACTORY_RAIL_SECRET}));
+  assert.equal(fromCity.http,403);
+  assert.equal(fromCity.json.reason,'GO_RAIL_REQUIRED');
+  assert.equal(fileReads,1);
+});
