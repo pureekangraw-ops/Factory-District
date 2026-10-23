@@ -170,6 +170,7 @@ export function createFactoryRuntime({
       workPassRef: handoff.workPassRef,
       actingActor: handoff.actingActor,
       authorizationSource: handoff.authorizationSource,
+      originSystem: handoff.source.system,
       stationId: FACTORY_STATION_ID,
       status,
       boundaryVerified,
