@@ -4,7 +4,7 @@ import { createR2RecordStore } from './r2-record-store.mjs';
 import { createFactoryRuntime } from './factory-runtime.mjs';
 import { createPixieOperator } from './pixie-autonomous.mjs';
 import { BUILD_SOURCE_SHA } from './build-source-identity.mjs';
-import { authenticateRailRequest, railTransportHealth, validatePantheonHandoff } from './rail-auth.mjs';
+import { authenticateRailRequest, railTransportHealth, validatePantheonHandoff, validateGoDirectHandoff } from './rail-auth.mjs';
 import { createConfiguredMachinery } from './configured-machinery.mjs';
 import { createDwarfLogicTraineeRunner } from './dwarf-logic-trainee.mjs';
 
@@ -81,6 +81,7 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
           const input = JSON.parse(authenticated.body);
           if(input?.workId===L1_TASK_ID && input.intent!==L1_INTENT)throw Error('L1_TASK_RESERVED');
           if (authenticated.principal === 'PANTHEON') validatePantheonHandoff(input);
+          if (authenticated.principal === 'GO') validateGoDirectHandoff(input);
           if(input.intent===L1_INTENT){
             if(authenticated.principal!=='PANTHEON')return json({status:'DENIED',reason:'PANTHEON_RAIL_REQUIRED'},403);
             return json(await l1.preflight(input));
@@ -107,6 +108,7 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
           const input = JSON.parse(authenticated.body);
           if(input?.workId===L1_TASK_ID && input.intent!==L1_INTENT)throw Error('L1_TASK_RESERVED');
           if (authenticated.principal === 'PANTHEON') validatePantheonHandoff(input);
+          if (authenticated.principal === 'GO') validateGoDirectHandoff(input);
           if(input.intent===L1_INTENT){
             if(authenticated.principal!=='PANTHEON')return json({status:'DENIED',reason:'PANTHEON_RAIL_REQUIRED'},403);
             return json(await l1.receive(input),202);
@@ -159,6 +161,10 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
           catch{return json({status:'UNKNOWN',reason:'L1_DURABLE_EVIDENCE_MISMATCH'},409);}
         }
         const result = await runtime.readback(receiptId);
+        if (authenticated.principal === 'GO' && result.reason !== 'RECEIPT_NOT_FOUND'
+          && (result.actingActor !== 'GO' || result.authorizationSource !== 'WORK_PASS')) {
+          return json({status:'DENIED',reason:'GO_RAIL_READBACK_DENIED'},403);
+        }
         if (authenticated.principal === 'PANTHEON' && result.reason !== 'RECEIPT_NOT_FOUND'
           && (result.actingActor !== 'PANTHEON'
             || !/^task_[a-f0-9]{32}$/.test(result.workId || '')
