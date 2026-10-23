@@ -7,6 +7,7 @@ import { BUILD_SOURCE_SHA } from './build-source-identity.mjs';
 import { authenticateRailRequest, railTransportHealth, validatePantheonHandoff, validateGoDirectHandoff } from './rail-auth.mjs';
 import { createConfiguredMachinery } from './configured-machinery.mjs';
 import { createDwarfLogicTraineeRunner } from './dwarf-logic-trainee.mjs';
+import { prepareGoInput } from './go-direct-input.mjs';
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8' } });
@@ -121,6 +122,24 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
           const status = reason === 'FACTORY_WORK_SCOPE_CONFLICT' || reason === 'FACTORY_CLAIM_UNCERTAIN'
             ? 409 : reason === 'STORAGE_UNAVAILABLE' ? 503 : 400;
           return json({ status: status === 409 ? 'UNKNOWN' : 'DENIED', reason }, status);
+        }
+      }
+
+      // GO can supply a scoped work input without preparing R2 manually.
+      // This route only stores immutable source material; it never runs a machine.
+      if(request.method==='POST' && url.pathname==='/station/go-input'){
+        if(!runtime||!env.RECORD_STORE)return json({status:'UNKNOWN',reason:'GO_INPUT_STORAGE_NOT_CONFIGURED'},503);
+        const auth=await authenticateRailRequest(request,env);
+        if(!auth.ok)return json({status:'DENIED',reason:auth.reason},auth.status);
+        if(auth.principal!=='GO')return json({status:'DENIED',reason:'GO_RAIL_REQUIRED'},403);
+        try{
+          if(auth.body.length>65536)throw Error('GO_INPUT_TOO_LARGE');
+          const input=JSON.parse(auth.body);
+          const result=await prepareGoInput(env,input,env.SOURCE_SHA||env.COMMIT_SHA||'UNKNOWN');
+          return json(result);
+        }catch(e){
+          const reason=typeof e?.code==='string'?e.code:'GO_INPUT_PREPARATION_FAILED';
+          return json({status:'DENIED',reason},reason==='GO_INPUT_TOO_LARGE'?413:400);
         }
       }
 
