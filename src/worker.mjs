@@ -288,6 +288,10 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
           catch{return json({status:'UNKNOWN',reason:'L1_DURABLE_EVIDENCE_MISMATCH'},409);}
         }
         const result = await runtime.readback(receiptId);
+        // Direct GO artifacts are private to the dedicated GO rail. Preserve
+        // CITY's existing access to CITY receipts without exposing GO jobs.
+        if (authenticated.principal === 'CITY' && result.originSystem === 'go-together')
+          return json({status:'DENIED',reason:'GO_RECEIPT_REQUIRES_GO_RAIL'},403);
         if (authenticated.principal === 'GO' && result.reason !== 'RECEIPT_NOT_FOUND'
           && (result.actingActor !== 'GO' || result.authorizationSource !== 'WORK_PASS' || result.originSystem !== 'go-together')) {
           return json({status:'DENIED',reason:'GO_RAIL_READBACK_DENIED'},403);
