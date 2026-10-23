@@ -141,3 +141,22 @@ principal and matching scoped LOGIC Work Pass. It reads a durable claim and
 machine evidence, then recovers a missing receipt. No machine is invoked here;
 absent or unverified effect remains UNKNOWN. The temporary CI smoke credential
 was revoked and the single-use workflow retired. CODE/VISUAL are not production-ready.
+
+
+## PIXIE recovery boundaries
+
+PIXIE accepts a safe integer attempt budget of 1–10 (default 1). Thrown
+AUTHORITY_DENIED, authorityBoundary, or AUTHORITY_DENIED class stops as BLOCKED,
+even if retryable. Other exceptions expose only PIXIE_MACHINE_ERROR, never raw
+messages or provider codes. Direct PIXIE handler exceptions use that same stable code.
+
+Each attempt receives a fresh clone of baseline Work; caller state is preserved.
+Uncloneable Work returns UNKNOWN / PIXIE_WORK_UNCLONEABLE without invoking a runner.
+Conflicting supplied result Work, machine or domain identity remains UNKNOWN;
+legacy omitted identity remains compatible, not full owner/evidence verification.
+COMPLETE with a pending return remains UNKNOWN.
+
+These are local control boundaries, not runtime Factory acceptance. Retry safety
+still belongs to owner adapters. Existing uncertain-effect claims remain intact:
+never clear a claim or replay an uncertain effect automatically. Recovery tests use
+local in-memory mocks only; they do not execute the completed L1 task.

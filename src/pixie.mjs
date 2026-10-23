@@ -16,8 +16,8 @@ export function createPixie({ clock = () => new Date().toISOString(), idFactory 
     let result;
     try {
       result = await handler({ handoff, pixie: 'PIXIE' });
-    } catch (error) {
-      return { status: FACTORY_STATUS.UNKNOWN, reason: 'DESTINATION_ERROR', error: error.code || error.message, workPassRef };
+    } catch {
+      return { status: FACTORY_STATUS.UNKNOWN, reason: 'DESTINATION_ERROR', error: 'PIXIE_MACHINE_ERROR', workPassRef };
     }
     if (result?.status === 'UNKNOWN') return { status: FACTORY_STATUS.UNKNOWN, reason: result.reason || 'MACHINE_RESULT_UNVERIFIED', result, domainCompleted: false, workPassRef };
     const domainCompleted = result?.completed === true && result?.status === 'RETURNED';
