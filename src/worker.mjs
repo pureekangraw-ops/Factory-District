@@ -124,6 +124,58 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
         }
       }
 
+      // GO reads a real, private artifact only after authenticating its signed
+      // principal and binding the requested R2 reference to its own receipt.
+      // POST signs the exact JSON request body (including receipt/ref).
+      if (request.method === 'POST' && url.pathname === '/station/go-artifact') {
+        if (!runtime || !env.RECORD_STORE)
+          return json({status:'UNKNOWN',reason:'ARTIFACT_STORAGE_NOT_CONFIGURED'},503);
+        const authenticated=await authenticateRailRequest(request,env);
+        if(!authenticated.ok)return json({status:'DENIED',reason:authenticated.reason},authenticated.status);
+        if(authenticated.principal!=='GO')
+          return json({status:'DENIED',reason:'GO_RAIL_REQUIRED'},403);
+        try {
+          if(authenticated.body.length>2048)throw Error('ARTIFACT_REQUEST_TOO_LARGE');
+          const args=JSON.parse(authenticated.body);
+          if(!args || typeof args!=='object' || Array.isArray(args) ||
+            Object.keys(args).sort().join('|')!=='artifactRef|receiptId')
+            throw Error('INVALID_ARTIFACT_REQUEST');
+          const id=args.receiptId,ref=args.artifactRef;
+          if(typeof id!=='string'||!/^receipt-[A-Za-z0-9-]{8,80}$/.test(id) ||
+            typeof ref!=='string' || ref.length>900 ||
+            !ref.startsWith('r2://factory/edge-results/'))
+            throw Error('INVALID_ARTIFACT_REQUEST');
+          const filename=ref.slice('r2://factory/'.length);
+          if(filename.split('/').some(part=>!part||part==='.'||part==='..'||part.includes('\\')))
+            throw Error('INVALID_ARTIFACT_PATH');
+          const back=await runtime.readback(id);
+          if(back.reason==='RECEIPT_NOT_FOUND')
+            return json({status:'UNKNOWN',reason:'RECEIPT_NOT_FOUND'},404);
+          if(back.actingActor!=='GO' || back.originSystem!=='go-together' ||
+            back.authorizationSource!=='WORK_PASS' || back.domainVerified!==true ||
+            !Array.isArray(back.result?.artifactRefs) || !back.result.artifactRefs.includes(ref))
+            return json({status:'DENIED',reason:'ARTIFACT_NOT_IN_GO_RECEIPT'},403);
+          const file=await env.RECORD_STORE.get(filename);
+          if(!file)return json({status:'UNKNOWN',reason:'ARTIFACT_NOT_FOUND'},404);
+          if(file.size>524288)return json({status:'UNKNOWN',reason:'ARTIFACT_EXCEEDS_MCP_LIMIT'},413);
+          const bytes=await file.arrayBuffer();
+          if(bytes.byteLength>524288)return json({status:'UNKNOWN',reason:'ARTIFACT_EXCEEDS_MCP_LIMIT'},413);
+          const digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))]
+            .map(v=>v.toString(16).padStart(2,'0')).join('');
+          const type=filename.endsWith('.png')?'image/png':
+            filename.endsWith('.js')?'text/javascript; charset=utf-8':
+            filename.endsWith('.html')?'text/html; charset=utf-8':'application/octet-stream';
+          return new Response(bytes,{status:200,headers:{
+            'content-type':type,'cache-control':'no-store',
+            'x-factory-artifact-sha256':digest,
+            'x-factory-receipt-id':id,
+            'x-factory-source-sha':back.sourceSha,
+            'x-content-type-options':'nosniff'}});
+        } catch {
+          return json({status:'DENIED',reason:'INVALID_GO_ARTIFACT_REQUEST'},400);
+        }
+      }
+
       // A restricted evidence-only recovery for an interrupted Pantheon LOGIC handoff.
       // This route NEVER calls a domain runner or repeats a machine effect.
       if (request.method === 'POST' && url.pathname === '/station/reconcile') {
