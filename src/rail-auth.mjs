@@ -1,6 +1,5 @@
 import {L1_INTENT,validateL1Fields} from './l1-runtime.mjs';
 import {L1_TASK_ID} from './l1-text-artifact.mjs';
-export { validateGoDirectHandoff } from './go-direct-rail.mjs';
 export const FACTORY_STATION_PROTOCOL = 'METROPOLIS_FACTORY_STATION_V2';
 export const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
