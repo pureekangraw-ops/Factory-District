@@ -13,6 +13,7 @@ export const FACTORY_STATUS = Object.freeze({
 export const FACTORY_VERIFICATION_SCOPE = Object.freeze({ BOUNDARY_HANDOFF: 'BOUNDARY_HANDOFF' });
 export const FACTORY_DOMAINS = Object.freeze(['CODE', 'VISUAL', 'LOGIC']);
 export const FACTORY_STATION_ID = 'FACTORY-STATION';
+export const FACTORY_WORK_PASS_DESTINATION_ID = 'FACTORY_STATION';
 
 function requiredString(value, name) {
   if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${name}_REQUIRED`);
@@ -31,9 +32,82 @@ function object(value, name) {
   return value;
 }
 
+function text(value) {
+  return String(value ?? '').trim();
+}
+
+function rejectWorkPass(code) {
+  const error = new Error(code);
+  error.code = code;
+  throw error;
+}
+
+export function validateWorkPass({ workPass, workPassRef, workId, checkpointId, actingActor, cityAuthorization, operation } = {}) {
+  const ref = text(workPassRef);
+  if (!ref) rejectWorkPass('FACTORY_WORK_PASS_REF_REQUIRED');
+  if (!workPass || typeof workPass !== 'object' || Array.isArray(workPass)) rejectWorkPass('FACTORY_WORK_PASS_REQUIRED');
+
+  if (text(workPass.kind) !== 'WORK_PASS' || text(workPass.version) !== 'WORK_PASS_V1') {
+    rejectWorkPass('FACTORY_WORK_PASS_VERSION_INVALID');
+  }
+  if (text(workPass.status) !== 'ACTIVE') rejectWorkPass('FACTORY_WORK_PASS_INACTIVE');
+  const passActor = text(workPass.actor);
+  if (!passActor) rejectWorkPass('FACTORY_WORK_PASS_ACTOR_INVALID');
+  // Transport HMAC authenticates the City sender. This actor cannot be supplied
+  // by an end user: City Hall stamps it after checking the authenticated principal.
+  const requestedActor = actingActor == null ? passActor : text(actingActor);
+  if (!requestedActor) rejectWorkPass('FACTORY_HANDOFF_ACTOR_REQUIRED');
+  if (requestedActor !== passActor) {
+    const grant = cityAuthorization;
+    if (!grant || grant.kind !== 'CITY_AUTHORIZATION_V1'
+      || grant.issuedBy !== 'CITY_HALL'
+      || grant.source !== 'EXPLICIT_WORK_GRANT'
+      || grant.action !== 'handoff'
+      || grant.allowed !== true
+      || text(grant.actor) !== requestedActor
+      || text(grant.workId) !== text(workId)
+      || text(grant.checkpointId) !== text(checkpointId)
+      || text(grant.workPassRef) !== ref
+      || text(grant.stationId) !== FACTORY_WORK_PASS_DESTINATION_ID
+      || !text(operation) || text(grant.operation) !== text(operation)) {
+      rejectWorkPass('FACTORY_ACTOR_DELEGATION_REQUIRED');
+    }
+  }
+
+  if (text(workPass.workId) !== text(workId) || text(workPass.checkpointId) !== text(checkpointId)) {
+    rejectWorkPass('FACTORY_WORK_PASS_SCOPE_MISMATCH');
+  }
+
+  const actions = Array.isArray(workPass.permissions?.actions)
+    ? workPass.permissions.actions.map(text)
+    : [];
+  if (!actions.includes('handoff')) rejectWorkPass('FACTORY_WORK_PASS_ACTION_DENIED');
+
+  const destinations = Array.isArray(workPass.permissions?.handoff) ? workPass.permissions.handoff : [];
+  if (!destinations.some((rule) => text(rule?.stationId) === FACTORY_WORK_PASS_DESTINATION_ID)) {
+    rejectWorkPass('FACTORY_WORK_PASS_DESTINATION_DENIED');
+  }
+
+  const passId = text(workPass.passId);
+  if (!passId || ref !== `work-pass://${passId}`) rejectWorkPass('FACTORY_WORK_PASS_REF_MISMATCH');
+  if (workPass.authorityTransferred === true) rejectWorkPass('FACTORY_WORK_PASS_AUTHORITY_TRANSFER_INVALID');
+
+  return Object.freeze({
+    workPassRef: ref,
+    passId,
+    actor: requestedActor,
+    passActor,
+    authorizationSource: requestedActor === passActor ? 'WORK_PASS' : 'EXPLICIT_WORK_GRANT',
+    destinationId: FACTORY_WORK_PASS_DESTINATION_ID,
+    validated: true,
+  });
+}
+
 export function createHandoff(input = {}) {
   const source = object(input.source, 'source');
   const target = object(input.target, 'target');
+  const workId = requiredString(input.workId, 'workId');
+  const checkpointId = requiredString(input.checkpointId, 'checkpointId');
   const ownerDomain = requiredString(input.ownerDomain, 'ownerDomain').toUpperCase();
   if (!FACTORY_DOMAINS.includes(ownerDomain)) throw new TypeError('ownerDomain_INVALID');
   if (requiredString(target.stationId, 'target.stationId') !== FACTORY_STATION_ID) throw new Error('TARGET_MUST_BE_FACTORY_STATION');
@@ -41,11 +115,26 @@ export function createHandoff(input = {}) {
   if (Object.hasOwn(input, 'credential') || Object.hasOwn(input, 'token') || Object.hasOwn(input, 'secret')) {
     throw new Error('HANDOFF_MUST_NOT_CARRY_CREDENTIALS');
   }
+
+  const validatedPass = validateWorkPass({
+    workPass: input.workPass,
+    workPassRef: input.workPassRef,
+    workId,
+    checkpointId,
+    actingActor: input.actingActor,
+    cityAuthorization: input.cityAuthorization,
+    operation: input.operation,
+  });
+
   return Object.freeze({
     kind: 'FACTORY_HANDOFF',
     contractVersion: FACTORY_CONTRACT_VERSION,
-    workId: requiredString(input.workId, 'workId'),
-    checkpointId: requiredString(input.checkpointId, 'checkpointId'),
+    workId,
+    checkpointId,
+    workPassRef: validatedPass.workPassRef,
+    actingActor: validatedPass.actor,
+    passActor: validatedPass.passActor,
+    authorizationSource: validatedPass.authorizationSource,
     source: Object.freeze({
       stationId: requiredString(source.stationId, 'source.stationId'),
       system: requiredString(source.system, 'source.system'),
@@ -71,6 +160,9 @@ export function createReceipt({ receiptId, handoff, status, acceptedAt, outcome 
     receiptId: requiredString(receiptId, 'receiptId'),
     workId: handoff.workId,
     checkpointId: handoff.checkpointId,
+    workPassRef: handoff.workPassRef,
+    actingActor: handoff.actingActor,
+    authorizationSource: handoff.authorizationSource,
     stationId: FACTORY_STATION_ID,
     status: requiredString(status, 'status'),
     outcome,
@@ -88,6 +180,9 @@ export function createEvidence({ evidenceRef, handoff, observedAt, sourceSha, ve
     evidenceRef: requiredString(evidenceRef, 'evidenceRef'),
     workId: handoff.workId,
     checkpointId: handoff.checkpointId,
+    workPassRef: handoff.workPassRef,
+    actingActor: handoff.actingActor,
+    authorizationSource: handoff.authorizationSource,
     ownerDomain: handoff.ownerDomain,
     sourceSha: requiredString(sourceSha, 'sourceSha'),
     verificationScope: requiredString(verificationScope, 'verificationScope'),

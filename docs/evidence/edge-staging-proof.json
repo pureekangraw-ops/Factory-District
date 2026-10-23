@@ -1,0 +1,82 @@
+{
+  "schema": "FACTORY_EDGE_STAGING_PROOF_V1",
+  "deploymentSource": "aa21e0716d498a692b558e18cd9da1568d4a92c5",
+  "environment": "ISOLATED_STAGING",
+  "jobs": [
+    {
+      "domain": "CODE",
+      "workId": "STAGING-CODE-45F5FDF00BCB4506949789966E1702F7",
+      "checkpointId": "STAGING-CODE-45F5FDF00BCB4506949789966E1702F7:CP-01",
+      "receiptId": "receipt-d7a3748b-e16b-4936-bd28-d19edfcbcc20",
+      "runId": "run-d36a0fb0-d49e-4114-aff8-9a574f2271c5",
+      "sourceSha": "aa21e0716d498a692b558e18cd9da1568d4a92c5",
+      "domainVerified": true,
+      "artifactRef": "r2://factory-district-preview/edge-results/STAGING-CODE-45F5FDF00BCB4506949789966E1702F7/STAGING-CODE-45F5FDF00BCB4506949789966E1702F7%3ACP-01/run-d36a0fb0-d49e-4114-aff8-9a574f2271c5/main.js",
+      "artifactSha256": "c801d6e36cfcde54e98f1675e190e76e4a9ece7e1c9341eeb6b98b31bacebf26",
+      "artifactBytes": 117,
+      "independentOwnerReadback": true,
+      "identicalDuplicateReceipt": true,
+      "observedAt": "2026-10-21T19:53:13.114Z",
+      "runtime": {
+        "status": "PASS",
+        "evidenceRef": "r2://factory-district-preview/edge-results/STAGING-CODE-45F5FDF00BCB4506949789966E1702F7/STAGING-CODE-45F5FDF00BCB4506949789966E1702F7%3ACP-01/run-d36a0fb0-d49e-4114-aff8-9a574f2271c5/verifyRuntime.json",
+        "runtimeSha": "c801d6e36cfcde54e98f1675e190e76e4a9ece7e1c9341eeb6b98b31bacebf26",
+        "runtimeRef": "r2://factory-district-preview/edge-results/STAGING-CODE-45F5FDF00BCB4506949789966E1702F7/STAGING-CODE-45F5FDF00BCB4506949789966E1702F7%3ACP-01/run-d36a0fb0-d49e-4114-aff8-9a574f2271c5/deployment.json",
+        "observed": [
+          {
+            "path": "/",
+            "status": 200,
+            "bodySha": "0d5b17d60e3e03b6df8ac4c1fd5af13ebd4f4c7496ac3a7fc246a25f427633bb"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "VISUAL",
+      "workId": "STAGING-VISUAL-0382B880F26A4FF1B2DFDB73D707DADE",
+      "checkpointId": "STAGING-VISUAL-0382B880F26A4FF1B2DFDB73D707DADE:CP-01",
+      "receiptId": "receipt-31e864a5-252c-4281-b3a3-5011a1b42321",
+      "runId": "run-10b3d4fc-5fe2-4994-b401-459f99f96493",
+      "sourceSha": "aa21e0716d498a692b558e18cd9da1568d4a92c5",
+      "domainVerified": true,
+      "artifactRef": "r2://factory-district-preview/edge-results/STAGING-VISUAL-0382B880F26A4FF1B2DFDB73D707DADE/STAGING-VISUAL-0382B880F26A4FF1B2DFDB73D707DADE%3ACP-01/run-10b3d4fc-5fe2-4994-b401-459f99f96493/render.png",
+      "artifactSha256": "579e2c82df4ff163e0f0eaca96fc713f06e238a87601da88800a3e3e67e53f48",
+      "artifactBytes": 27775,
+      "independentOwnerReadback": true,
+      "identicalDuplicateReceipt": true,
+      "observedAt": "2026-10-21T19:53:34.022Z",
+      "runtime": null
+    }
+  ],
+  "unsignedDispatchRejected": {
+    "httpStatus": 401,
+    "body": {
+      "status": "DENIED",
+      "reason": "FACTORY_RAIL_SIGNATURE_INVALID"
+    }
+  },
+  "provider": {
+    "service": "factory-machinery-staging",
+    "deploymentId": "7b0ab5f59b7746489fc63ce277adb6ac",
+    "bindings": [
+      "ARTIFACTS:factory-district-preview",
+      "BROWSER:browser",
+      "LOADER:worker_loader"
+    ],
+    "publicEndpointEnabled": false
+  },
+  "factory": {
+    "service": "factory-code-visual-staging",
+    "deploymentId": "9fa3e506cdf44360a8327e6a7848d4d3",
+    "bucket": "factory-district-preview",
+    "providers": {
+      "CODE": "CodeProvider",
+      "VISUAL": "VisualProvider"
+    }
+  },
+  "limits": [
+    "CODE: single Worker JavaScript module, exact text patch and explicit HTTP assertions",
+    "VISUAL: static HTML card, real browser PNG rendering, text/viewport/digest checks",
+    "Not production or arbitrary Node/npm, generative image or aesthetic acceptance"
+  ]
+}

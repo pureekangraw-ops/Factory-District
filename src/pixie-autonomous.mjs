@@ -14,12 +14,18 @@ export function createPixieOperator({ domainRunners = {}, clock = () => new Date
   if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 10) throw new TypeError('maxAttempts_MUST_BE_INTEGER_1_TO_10');
   return Object.freeze({
     async run({ work, domain, machineId, authorityRef } = {}) {
-      const baseline = structuredClone(work);
       const events = [{ phase: PIXIE_PHASE.RECEIVE, at: clock(), workId: work?.workId || null }];
       const normalizedDomain = String(domain || '').toUpperCase();
       const runner = domainRunners[normalizedDomain];
       events.push({ phase: PIXIE_PHASE.SELECT, at: clock(), domain: normalizedDomain, machineId: machineId || null });
       if (typeof runner !== 'function') return { status: 'UNKNOWN', lifecycleStatus: 'UNKNOWN', attempts: 0, events, failure: { class: FAILURE_CLASS.DESTINATION_UNAVAILABLE, code: 'MACHINE_NOT_REGISTERED' } };
+      let baseline;
+      try {
+        baseline = structuredClone(work);
+      } catch {
+        events.push({ phase: PIXIE_PHASE.RETURN, at: clock(), status: 'UNKNOWN', attempt: 0 });
+        return { status: 'UNKNOWN', lifecycleStatus: 'UNKNOWN', domain: normalizedDomain, machineId, attempts: 0, events, failure: { class: FAILURE_CLASS.VERIFICATION_FAILED, code: 'PIXIE_WORK_UNCLONEABLE' } };
+      }
       let attempts = 0;
       let lastResult;
       while (attempts < maxAttempts) {

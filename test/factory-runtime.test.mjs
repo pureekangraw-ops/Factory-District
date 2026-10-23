@@ -5,7 +5,45 @@ import { FACTORY_STATION_ID } from '../src/contract.mjs';
 import { createDurableStore } from '../src/durable-store.mjs';
 import { createInMemoryDurableDriver } from './support/in-memory-durable-driver.mjs';
 
-const base = (ownerDomain, extra = {}) => ({ workId: `WORK-${ownerDomain}`, checkpointId: 'CP-1', source: { stationId: 'METROPOLIS-STATION', system: 'METROPOLIS' }, target: { stationId: FACTORY_STATION_ID, system: 'FACTORY', component: 'FACTORY_HALL' }, ownerDomain, intent: 'EXECUTE', scope: [`EXECUTE:${ownerDomain}`], requestedAt: '2026-10-05T00:00:00Z', ...extra });
+function validPass(workId, checkpointId = 'CP-1', overrides = {}) {
+  return {
+    kind: 'WORK_PASS',
+    version: 'WORK_PASS_V1',
+    passId: `PASS:${workId}:${checkpointId}`,
+    workId,
+    checkpointId,
+    actor: 'GO',
+    status: 'ACTIVE',
+    permissions: {
+      actions: ['read', 'handoff', 'return'],
+      handoff: [{ stationId: 'FACTORY_STATION' }],
+    },
+    authorityTransferred: false,
+    ...overrides,
+  };
+}
+
+const base = (ownerDomain, extra = {}) => {
+  const workId = extra.workId || `WORK-${ownerDomain}`;
+  const checkpointId = extra.checkpointId || 'CP-1';
+  const pass = Object.hasOwn(extra, 'workPass') ? extra.workPass : validPass(workId, checkpointId);
+  const ref = Object.hasOwn(extra, 'workPassRef')
+    ? extra.workPassRef
+    : pass ? `work-pass://${pass.passId}` : undefined;
+  return {
+    workId,
+    checkpointId,
+    workPass: pass,
+    workPassRef: ref,
+    source: { stationId: 'METROPOLIS-STATION', system: 'METROPOLIS' },
+    target: { stationId: FACTORY_STATION_ID, system: 'FACTORY', component: 'FACTORY_HALL' },
+    ownerDomain,
+    intent: 'EXECUTE',
+    scope: [`EXECUTE:${ownerDomain}`],
+    requestedAt: '2026-10-05T00:00:00Z',
+    ...extra,
+  };
+};
 
 function runtime(overrides = {}) {
   let n = 0;
@@ -23,6 +61,7 @@ test('health exposes exact source/runtime SHA and durable storage adapter', () =
   assert.equal(health.sourceSha, 'abc123');
   assert.equal(health.runtimeSha, 'abc123');
   assert.deepEqual(health.storage, { status: 'READY', durability: 'ADAPTER' });
+  assert.equal(health.transport.status, 'READY');
 });
 
 test('CODE, VISUAL and LOGIC use durable receipt/readback storage', async () => {
@@ -40,6 +79,113 @@ test('missing durable store fails closed instead of creating runtime memory stat
   assert.throws(() => createFactoryRuntime({ sourceSha: 'abc123', domainHandlers: {} }), /durableStore_REQUIRED/);
 });
 
+test('Factory boundary rejects missing Work Pass', async () => {
+  const input = base('CODE');
+  delete input.workPass;
+  await assert.rejects(() => runtime().receive(input), /FACTORY_WORK_PASS_REQUIRED/);
+});
+
+test('Factory boundary rejects cancelled Work Pass', async () => {
+  await assert.rejects(() => runtime().receive(base('CODE', { workPass: validPass('WORK-CODE', 'CP-1', { status: 'CANCELLED' }) })), /FACTORY_WORK_PASS_INACTIVE/);
+});
+
+test('Factory boundary rejects mismatched Work ID', async () => {
+  await assert.rejects(() => runtime().receive(base('CODE', { workPass: validPass('WORK-OTHER', 'CP-1') })), /FACTORY_WORK_PASS_SCOPE_MISMATCH/);
+});
+
+test('Factory boundary rejects mismatched Checkpoint ID', async () => {
+  await assert.rejects(() => runtime().receive(base('CODE', { workPass: validPass('WORK-CODE', 'CP-OTHER') })), /FACTORY_WORK_PASS_SCOPE_MISMATCH/);
+});
+
+test('Factory accepts any authorized Work Pass holder, including LIGHT and custom actors', async () => {
+  for (const actor of ['GO', 'LIGHT', 'DWARF-1']) {
+    const pass = validPass('WORK-CODE', 'CP-1', { actor });
+    const received = await runtime().receive(base('CODE', { workPass: pass, actingActor: actor }));
+    assert.equal(received.receipt.status, 'HANDOFF_VERIFIED');
+    assert.equal(received.receipt.actingActor, actor);
+    assert.equal(received.readback.actingActor, actor);
+    assert.equal(received.readback.authorizationSource, 'WORK_PASS');
+  }
+});
+
+test('Factory rejects acting-actor spoofing unless City attests an explicit scoped grant', async () => {
+  const payload = base('CODE', { actingActor: 'LIGHT', operation: 'FACTORY_HANDOFF' });
+  await assert.rejects(() => runtime().receive(payload), /FACTORY_ACTOR_DELEGATION_REQUIRED/);
+  const grant = {
+    kind: 'CITY_AUTHORIZATION_V1', issuedBy: 'CITY_HALL',
+    source: 'EXPLICIT_WORK_GRANT', action: 'handoff', allowed: true,
+    actor: 'LIGHT', workId: payload.workId, checkpointId: payload.checkpointId,
+    workPassRef: payload.workPassRef, stationId: 'FACTORY_STATION',
+    operation: payload.operation,
+  };
+  const allowed = await runtime().receive({ ...payload, cityAuthorization: grant });
+  assert.equal(allowed.receipt.status, 'HANDOFF_VERIFIED');
+  assert.equal(allowed.receipt.actingActor, 'LIGHT');
+  assert.equal(allowed.readback.authorizationSource, 'EXPLICIT_WORK_GRANT');
+  for (const forged of [
+    { ...grant, action: 'read' },
+    { ...grant, stationId: 'ANOTHER_STATION' },
+    { ...grant, workId: 'WORK-OTHER' },
+    { ...grant, checkpointId: 'CP-OTHER' },
+    { ...grant, workPassRef: 'work-pass://OTHER' },
+    { ...grant, actor: 'UNKNOWN' },
+    { ...grant, allowed: false },
+    { ...grant, operation: 'OTHER' },
+  ]) {
+    await assert.rejects(
+      () => runtime().receive({ ...payload, cityAuthorization: forged }),
+      /FACTORY_ACTOR_DELEGATION_REQUIRED/,
+    );
+  }
+});
+
+test('Factory boundary rejects missing handoff permission', async () => {
+  await assert.rejects(() => runtime().receive(base('CODE', { workPass: validPass('WORK-CODE', 'CP-1', { permissions: { actions: ['read', 'return'], handoff: [{ stationId: 'FACTORY_STATION' }] } }) })), /FACTORY_WORK_PASS_ACTION_DENIED/);
+});
+
+test('Factory boundary rejects wrong Work Pass destination', async () => {
+  await assert.rejects(() => runtime().receive(base('CODE', { workPass: validPass('WORK-CODE', 'CP-1', { permissions: { actions: ['handoff'], handoff: [{ stationId: 'OTHER_STATION' }] } }) })), /FACTORY_WORK_PASS_DESTINATION_DENIED/);
+});
+
+test('Factory boundary rejects Work Pass reference mismatch', async () => {
+  await assert.rejects(() => runtime().receive(base('CODE', { workPassRef: 'work-pass://WRONG' })), /FACTORY_WORK_PASS_REF_MISMATCH/);
+});
+
+test('Factory boundary rejects authority transfer', async () => {
+  await assert.rejects(() => runtime().receive(base('CODE', { workPass: validPass('WORK-CODE', 'CP-1', { authorityTransferred: true }) })), /FACTORY_WORK_PASS_AUTHORITY_TRANSFER_INVALID/);
+});
+
+test('Factory boundary rejects wrong Work Pass kind/version', async () => {
+  await assert.rejects(() => runtime().receive(base('CODE', { workPass: validPass('WORK-CODE', 'CP-1', { version: 'WORK_PASS_V0' }) })), /FACTORY_WORK_PASS_VERSION_INVALID/);
+});
+
+test('valid Work Pass reference survives receipt, durable record, PIXIE result and readback without persisting the pass snapshot', async () => {
+  let n = 0;
+  const store = createDurableStore({ driver: createInMemoryDurableDriver() });
+  const factory = createFactoryRuntime({
+    sourceSha: 'abc123',
+    idFactory: () => `id-${++n}`,
+    clock: () => '2026-10-05T00:00:00Z',
+    domainHandlers: { CODE: async ({ handoff }) => ({ domain: 'CODE', workId: handoff.workId, completed: false }) },
+    recordStore: store,
+  });
+  const input = base('CODE');
+  const result = await factory.receive(input);
+  assert.equal(result.receipt.workPassRef, input.workPassRef);
+  assert.equal(result.readback.workPassRef, input.workPassRef);
+  assert.equal(result.pixie.workPassRef, input.workPassRef);
+  assert.equal(result.pixie.evidence.workPassRef, input.workPassRef);
+
+  const durable = await store.get(`factory/receipt/${result.receipt.receiptId}`);
+  assert.equal(durable.value.handoff.workPassRef, input.workPassRef);
+  assert.equal(Object.hasOwn(durable.value.handoff, 'workPass'), false);
+  assert.equal(durable.value.receipt.workPassRef, input.workPassRef);
+  assert.equal(durable.value.readback.workPassRef, input.workPassRef);
+  assert.equal(durable.value.pixieResult.workPassRef, input.workPassRef);
+
+  const readback = await factory.readback(result.receipt.receiptId);
+  assert.equal(readback.workPassRef, input.workPassRef);
+});
 
 test('wrong scope remains DENIED with durable storage', async () => {
   const result = await runtime().receive(base('CODE', { scope: ['EXECUTE:VISUAL'] }));
@@ -73,4 +219,35 @@ test('boundary handoff evidence remains distinct from domain completion', async 
   assert.equal(result.readback.verificationScope, 'BOUNDARY_HANDOFF');
   assert.equal(result.readback.domainCompleted, false);
   assert.equal(result.pixie.result.completed, false);
+});
+
+
+test('completed owner-domain work exposes a correlated verified return projection', async () => {
+  const factory = runtime({
+    domainHandlers: {
+      CODE: async () => ({
+        status: 'RETURNED',
+        completed: true,
+        machineResult: {
+          run: {
+            resultRefs: ['artifact://result-1'],
+            evidenceRefs: ['evidence://machine-1'],
+          },
+        },
+      }),
+    },
+  });
+  const input = base('CODE');
+  const completed = await factory.receive(input);
+  assert.equal(completed.readback.domainCompleted, true);
+  assert.equal(completed.readback.domainVerified, true);
+  assert.equal(completed.readback.result.workId, input.workId);
+  assert.equal(completed.readback.result.checkpointId, input.checkpointId);
+  assert.equal(completed.readback.result.workPassRef, input.workPassRef);
+  assert.deepEqual(completed.readback.result.artifactRefs, ['artifact://result-1']);
+  assert.deepEqual(completed.readback.result.evidenceRefs, ['evidence://machine-1']);
+
+  const persisted = await factory.readback(completed.receipt.receiptId);
+  assert.equal(persisted.domainVerified, true);
+  assert.equal(persisted.result.workPassRef, input.workPassRef);
 });

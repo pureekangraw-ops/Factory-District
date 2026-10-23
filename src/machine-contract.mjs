@@ -93,7 +93,9 @@ export function createMachineRun(input = {}) {
     domain: requiredString(input.domain, 'domain').toUpperCase(),
     executionState: EXECUTION_STATE.RECEIVED,
     returnState: RETURN_STATE.PENDING,
+    // checkpointId tracks machine phases; retain external Work correlation separately.
     checkpointId: CHECKPOINT.RECEIVE,
+    workCheckpointId: input.checkpointId == null ? null : requiredString(input.checkpointId, 'checkpointId'),
     attemptId: null,
     ingress: Object.freeze({
       systemId: requiredString(ingress.systemId, 'ingress.systemId'),

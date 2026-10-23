@@ -17,8 +17,13 @@ function evidenceFor(step, result) {
   return { kind: `VISUAL_${step}`, verificationScope: scope, source: { systemId: 'VISUAL_MACHINE', surfaceId: step }, contentRef, metadata: { status: result.status || 'UNKNOWN' } };
 }
 
+function requireReference(result, field, step) {
+  if (typeof result?.[field] !== 'string' || !result[field].trim())
+    throw new VisualMachineError(`${step}_${field}_REQUIRED`, FAILURE_CLASS.VERIFICATION_FAILED);
+}
+
 function requirePass(result, step) {
-  if (!result || ![VISUAL_STATUS.PASS, VISUAL_STATUS.READY, 'SUCCESS', 'VERIFIED', 'ACCEPTED'].includes(result.status)) {
+  if (!result || ![VISUAL_STATUS.PASS, 'SUCCESS', 'VERIFIED'].includes(result.status)) {
     throw new VisualMachineError(`${step}_NOT_PASSED`, step === VISUAL_STEP.FINAL_OUTPUT_VERIFY ? FAILURE_CLASS.VERIFICATION_FAILED : FAILURE_CLASS.EXECUTION_ERROR);
   }
   return result;
@@ -69,6 +74,7 @@ export async function runVisualMachine({ kernel, adapter, work, actorRef = 'PIXI
     run = await kernel.startAttempt(run.runId, { executorRef: `visual-machine://${adapter.target}`, actorRef });
     const input = await call(VISUAL_STEP.INPUT_INSPECT, { work, run, target: adapter.target, mode: adapter.mode });
     const interpretation = await call(VISUAL_STEP.INTERPRET, { work, run, input });
+    requireReference(interpretation, 'designVersion', VISUAL_STEP.INTERPRET);
     const composition = await call(VISUAL_STEP.COMPOSE, { work, run, input, interpretation });
     const creation = await call(VISUAL_STEP.CREATE_EDIT, { work, run, composition });
     let render = await call(VISUAL_STEP.RENDER, { work, run, creation });
@@ -84,6 +90,7 @@ export async function runVisualMachine({ kernel, adapter, work, actorRef = 'PIXI
     if (comparison.status !== VISUAL_STATUS.PASS) throw new VisualMachineError('VISUAL_COMPARISON_NOT_PASSED', FAILURE_CLASS.VERIFICATION_FAILED);
 
     const output = await call(VISUAL_STEP.EXPORT, { work, run, render, inspection, comparison });
+    requireReference(output, 'outputRef', VISUAL_STEP.EXPORT);
     const finalOutput = await call(VISUAL_STEP.FINAL_OUTPUT_VERIFY, { work, run, output, interpretation });
     const versionMatches = finalOutput.designVersion === interpretation.designVersion;
     evidence.push({ kind: 'VISUAL_OUTPUT_VERIFICATION', verificationScope: 'VERSION', source: { systemId: 'VISUAL_MACHINE', surfaceId: VISUAL_STEP.FINAL_OUTPUT_VERIFY }, contentRef: finalOutput.evidenceRef || output.outputRef, metadata: { expectedDesignVersion: interpretation.designVersion, observedDesignVersion: finalOutput.designVersion, matches: versionMatches } });
