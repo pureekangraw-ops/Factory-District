@@ -74,6 +74,10 @@ test('Factory generates its own Job ID, scopes machine and returns artifact rece
   const receipt=await call(f.app,await signed('/station/readback/'+a.data.receiptId,{method:'GET'}));
   assert.equal(receipt.status,200);
   assert.equal(receipt.data.domainVerified,true);
+  const cityRead=await call(f.app,await signed('/station/readback/'+a.data.receiptId,{
+    method:'GET',client:'CITY',key:'legacy-metropolis-secret'}));
+  assert.equal(cityRead.status,403);
+  assert.equal(cityRead.data.reason,'GO_RECEIPT_REQUIRES_GO_RAIL');
   const status=await call(f.app,await signed('/station/go-job-status',{payload:{requestId:REQ}}));
   assert.equal(status.status,200);
   assert.equal(status.data.receiptId,a.data.receiptId);
