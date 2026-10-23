@@ -162,7 +162,7 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
         }
         const result = await runtime.readback(receiptId);
         if (authenticated.principal === 'GO' && result.reason !== 'RECEIPT_NOT_FOUND'
-          && (result.actingActor !== 'GO' || result.authorizationSource !== 'WORK_PASS')) {
+          && (result.actingActor !== 'GO' || result.authorizationSource !== 'WORK_PASS' || result.originSystem !== 'go-together')) {
           return json({status:'DENIED',reason:'GO_RAIL_READBACK_DENIED'},403);
         }
         if (authenticated.principal === 'PANTHEON' && result.reason !== 'RECEIPT_NOT_FOUND'
