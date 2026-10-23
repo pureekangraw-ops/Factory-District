@@ -170,6 +170,7 @@ export function createFactoryRuntime({
       workPassRef: handoff.workPassRef,
       actingActor: handoff.actingActor,
       authorizationSource: handoff.authorizationSource,
+      originSystem: handoff.source.system,
       stationId: FACTORY_STATION_ID,
       status,
       boundaryVerified,
@@ -258,5 +259,13 @@ export function createFactoryRuntime({
     return record.value.readback;
   }
 
-  return Object.freeze({ health, preflight, receive, reconcile, readback });
+  // Internal read-only receipt recovery by Factory job identity; GO caller is
+  // authenticated at the Worker endpoint before this lookup is exposed.
+  async function lookupClaim(workId,checkpointId) {
+    const key='factory/claim/'+await shaHex([workId,checkpointId]);
+    const claim=(await store.get(key))?.value;
+    if(!claim?.receiptId)return {receiptId:null,readback:null};
+    return {receiptId:claim.receiptId,readback:await readback(claim.receiptId)};
+  }
+  return Object.freeze({ health, preflight, receive, reconcile, readback, lookupClaim });
 }

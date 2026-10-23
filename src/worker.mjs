@@ -7,6 +7,8 @@ import { BUILD_SOURCE_SHA } from './build-source-identity.mjs';
 import { authenticateRailRequest, railTransportHealth, validatePantheonHandoff } from './rail-auth.mjs';
 import { createConfiguredMachinery } from './configured-machinery.mjs';
 import { createDwarfLogicTraineeRunner } from './dwarf-logic-trainee.mjs';
+import { prepareGoJobInput, validateGoJobSpec } from './go-direct-input.mjs';
+import { factoryJobId, createInternalGoHandoff } from './go-direct-rail.mjs';
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8' } });
@@ -81,6 +83,7 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
           const input = JSON.parse(authenticated.body);
           if(input?.workId===L1_TASK_ID && input.intent!==L1_INTENT)throw Error('L1_TASK_RESERVED');
           if (authenticated.principal === 'PANTHEON') validatePantheonHandoff(input);
+          if (authenticated.principal === 'GO')return json({status:'DENIED',reason:'GO_USE_JOB_ROUTE'},403);
           if(input.intent===L1_INTENT){
             if(authenticated.principal!=='PANTHEON')return json({status:'DENIED',reason:'PANTHEON_RAIL_REQUIRED'},403);
             return json(await l1.preflight(input));
@@ -107,6 +110,7 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
           const input = JSON.parse(authenticated.body);
           if(input?.workId===L1_TASK_ID && input.intent!==L1_INTENT)throw Error('L1_TASK_RESERVED');
           if (authenticated.principal === 'PANTHEON') validatePantheonHandoff(input);
+          if (authenticated.principal === 'GO')return json({status:'DENIED',reason:'GO_USE_JOB_ROUTE'},403);
           if(input.intent===L1_INTENT){
             if(authenticated.principal!=='PANTHEON')return json({status:'DENIED',reason:'PANTHEON_RAIL_REQUIRED'},403);
             return json(await l1.receive(input),202);
@@ -119,6 +123,131 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
           const status = reason === 'FACTORY_WORK_SCOPE_CONFLICT' || reason === 'FACTORY_CLAIM_UNCERTAIN'
             ? 409 : reason === 'STORAGE_UNAVAILABLE' ? 503 : 400;
           return json({ status: status === 409 ? 'UNKNOWN' : 'DENIED', reason }, status);
+        }
+      }
+
+      // GO directly requests a Factory-owned job. No external Work Pass.
+      // HMAC authenticates the GO principal; Factory derives internal machine
+      // identity, scopes and deduplication key from the opaque request ID.
+      if(request.method==='POST' && url.pathname==='/station/go-job') {
+        if(!runtime||!env.RECORD_STORE)
+          return json({status:'UNKNOWN',reason:'GO_JOB_STORAGE_NOT_CONFIGURED'},503);
+        const auth=await authenticateRailRequest(request,env);
+        if(!auth.ok)return json({status:'DENIED',reason:auth.reason},auth.status);
+        if(auth.principal!=='GO')
+          return json({status:'DENIED',reason:'GO_RAIL_REQUIRED'},403);
+        let jobId=null,requestId=null;
+        try{
+          if(auth.body.length>65536)throw Object.assign(new Error('GO_JOB_TOO_LARGE'),{code:'GO_JOB_TOO_LARGE'});
+          const input=JSON.parse(auth.body);
+          if(!input||typeof input!=='object'||Array.isArray(input)||
+            Object.keys(input).sort().join('|')!=='domain|expectedSourceSha|requestId|spec')
+            throw Object.assign(new Error('GO_JOB_FIELDS_INVALID'),{code:'GO_JOB_FIELDS_INVALID'});
+          requestId=input.requestId;
+          jobId=await factoryJobId(requestId);
+          const current=env.SOURCE_SHA||env.COMMIT_SHA||'UNKNOWN';
+          if(!/^[a-f0-9]{40}$/.test(input.expectedSourceSha||'')||
+            input.expectedSourceSha!==current)
+            throw Object.assign(new Error('GO_FACTORY_SOURCE_MISMATCH'),{code:'GO_FACTORY_SOURCE_MISMATCH'});
+          validateGoJobSpec(input.domain,input.spec);
+          const checkpointId='CP-'+jobId;
+          const inputRef=await prepareGoJobInput(env.RECORD_STORE,{
+            domain:input.domain,jobId,checkpointId,spec:input.spec
+          });
+          const handoff=createInternalGoHandoff({jobId,domain:input.domain,inputRef,sourceSha:current});
+          const done=await runtime.receive(handoff);
+          const receiptId=done.receipt?.receiptId || null;
+          const back=done.readback;
+          const completed=Boolean(receiptId && back?.domainVerified===true &&
+            back?.domainCompleted===true && back?.workId===jobId &&
+            back?.originSystem==='go-together');
+          return json({status:completed?'COMPLETED':'EFFECT_UNVERIFIED',
+            jobId,requestId,receiptId,
+            domain:input.domain,sourceSha:current,executed:completed,
+            readback:back},completed?200:409);
+        } catch(error) {
+          const reason=typeof error?.code==='string'?error.code:'GO_JOB_EFFECT_UNCERTAIN';
+          const status=reason==='GO_FACTORY_SOURCE_MISMATCH'||reason==='FACTORY_WORK_SCOPE_CONFLICT'?409:
+            reason==='GO_JOB_TOO_LARGE'?413:
+            reason==='GO_JOB_EFFECT_UNCERTAIN'?502:400;
+          return json({status:status===409||status===502?'UNKNOWN':'DENIED',
+            reason,jobId,requestId,executed:false},status);
+        }
+      }
+
+      // Recovery is a read only lookup by GO requestId, not an execution retry.
+      if(request.method==='POST' && url.pathname==='/station/go-job-status') {
+        if(!runtime)return json({status:'UNKNOWN',reason:'GO_JOB_STORAGE_NOT_CONFIGURED'},503);
+        const auth=await authenticateRailRequest(request,env);
+        if(!auth.ok)return json({status:'DENIED',reason:auth.reason},auth.status);
+        if(auth.principal!=='GO')return json({status:'DENIED',reason:'GO_RAIL_REQUIRED'},403);
+        try{
+          if(auth.body.length>256)throw Error('GO_STATUS_INVALID');
+          const input=JSON.parse(auth.body);
+          if(!input||typeof input!=='object'||Array.isArray(input)||
+            Object.keys(input).join('|')!=='requestId')throw Error('GO_STATUS_INVALID');
+          const jobId=await factoryJobId(input.requestId);
+          const result=await runtime.lookupClaim(jobId,'CP-'+jobId);
+          if(!result.receiptId)return json({status:'NOT_FOUND',jobId,requestId:input.requestId,executed:false},404);
+          const back=result.readback;
+          if(back && back.reason!=='RECEIPT_NOT_FOUND' &&
+            (back.originSystem!=='go-together'||back.actingActor!=='GO'))
+            return json({status:'DENIED',reason:'GO_JOB_READBACK_DENIED'},403);
+          return json({status:back?.domainVerified===true?'COMPLETED':'UNKNOWN',
+            jobId,requestId:input.requestId,receiptId:result.receiptId,
+            readback:back,executed:back?.domainVerified===true});
+        }catch{return json({status:'DENIED',reason:'GO_STATUS_INVALID'},400);}
+      }
+
+      // GO reads a real, private artifact only after authenticating its signed
+      // principal and binding the requested R2 reference to its own receipt.
+      // POST signs the exact JSON request body (including receipt/ref).
+      if (request.method === 'POST' && url.pathname === '/station/go-artifact') {
+        if (!runtime || !env.RECORD_STORE)
+          return json({status:'UNKNOWN',reason:'ARTIFACT_STORAGE_NOT_CONFIGURED'},503);
+        const authenticated=await authenticateRailRequest(request,env);
+        if(!authenticated.ok)return json({status:'DENIED',reason:authenticated.reason},authenticated.status);
+        if(authenticated.principal!=='GO')
+          return json({status:'DENIED',reason:'GO_RAIL_REQUIRED'},403);
+        try {
+          if(authenticated.body.length>2048)throw Error('ARTIFACT_REQUEST_TOO_LARGE');
+          const args=JSON.parse(authenticated.body);
+          if(!args || typeof args!=='object' || Array.isArray(args) ||
+            Object.keys(args).sort().join('|')!=='artifactRef|receiptId')
+            throw Error('INVALID_ARTIFACT_REQUEST');
+          const id=args.receiptId,ref=args.artifactRef;
+          if(typeof id!=='string'||!/^receipt-[A-Za-z0-9-]{8,80}$/.test(id) ||
+            typeof ref!=='string' || ref.length>900 ||
+            !ref.startsWith('r2://factory/edge-results/'))
+            throw Error('INVALID_ARTIFACT_REQUEST');
+          const filename=ref.slice('r2://factory/'.length);
+          if(filename.split('/').some(part=>!part||part==='.'||part==='..'||part.includes('\\')))
+            throw Error('INVALID_ARTIFACT_PATH');
+          const back=await runtime.readback(id);
+          if(back.reason==='RECEIPT_NOT_FOUND')
+            return json({status:'UNKNOWN',reason:'RECEIPT_NOT_FOUND'},404);
+          if(back.actingActor!=='GO' || back.originSystem!=='go-together' ||
+            back.authorizationSource!=='WORK_PASS' || back.domainVerified!==true ||
+            !Array.isArray(back.result?.artifactRefs) || !back.result.artifactRefs.includes(ref))
+            return json({status:'DENIED',reason:'ARTIFACT_NOT_IN_GO_RECEIPT'},403);
+          const file=await env.RECORD_STORE.get(filename);
+          if(!file)return json({status:'UNKNOWN',reason:'ARTIFACT_NOT_FOUND'},404);
+          if(file.size>524288)return json({status:'UNKNOWN',reason:'ARTIFACT_EXCEEDS_MCP_LIMIT'},413);
+          const bytes=await file.arrayBuffer();
+          if(bytes.byteLength>524288)return json({status:'UNKNOWN',reason:'ARTIFACT_EXCEEDS_MCP_LIMIT'},413);
+          const digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))]
+            .map(v=>v.toString(16).padStart(2,'0')).join('');
+          const type=filename.endsWith('.png')?'image/png':
+            filename.endsWith('.js')?'text/javascript; charset=utf-8':
+            filename.endsWith('.html')?'text/html; charset=utf-8':'application/octet-stream';
+          return new Response(bytes,{status:200,headers:{
+            'content-type':type,'cache-control':'no-store',
+            'x-factory-artifact-sha256':digest,
+            'x-factory-receipt-id':id,
+            'x-factory-source-sha':back.sourceSha,
+            'x-content-type-options':'nosniff'}});
+        } catch {
+          return json({status:'DENIED',reason:'INVALID_GO_ARTIFACT_REQUEST'},400);
         }
       }
 
@@ -159,6 +288,14 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
           catch{return json({status:'UNKNOWN',reason:'L1_DURABLE_EVIDENCE_MISMATCH'},409);}
         }
         const result = await runtime.readback(receiptId);
+        // Direct GO artifacts are private to the dedicated GO rail. Preserve
+        // CITY's existing access to CITY receipts without exposing GO jobs.
+        if (authenticated.principal === 'CITY' && result.originSystem === 'go-together')
+          return json({status:'DENIED',reason:'GO_RECEIPT_REQUIRES_GO_RAIL'},403);
+        if (authenticated.principal === 'GO' && result.reason !== 'RECEIPT_NOT_FOUND'
+          && (result.actingActor !== 'GO' || result.authorizationSource !== 'WORK_PASS' || result.originSystem !== 'go-together')) {
+          return json({status:'DENIED',reason:'GO_RAIL_READBACK_DENIED'},403);
+        }
         if (authenticated.principal === 'PANTHEON' && result.reason !== 'RECEIPT_NOT_FOUND'
           && (result.actingActor !== 'PANTHEON'
             || !/^task_[a-f0-9]{32}$/.test(result.workId || '')

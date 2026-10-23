@@ -47,10 +47,13 @@ export async function authenticateRailRequest(request, env = {}, {
   nowMs = () => Date.now(),
 } = {}) {
   // Independent PANTHEON credential; never share or rotate the City rail key.
-  const principal = request.headers.get('x-factory-client') === 'PANTHEON' ? 'PANTHEON' : 'CITY';
-  const secret = text(principal === 'PANTHEON'
-    ? env.PANTHEON_FACTORY_RAIL_SECRET
-    : env.METROPOLIS_FACTORY_RAIL_SECRET);
+  const client = request.headers.get('x-factory-client');
+  const principal = client === 'PANTHEON' ? 'PANTHEON' : client === 'GO' ? 'GO' : 'CITY';
+  const secret = text(principal === 'PANTHEON' ? env.PANTHEON_FACTORY_RAIL_SECRET
+    : principal === 'GO' ? env.GO_FACTORY_RAIL_SECRET : env.METROPOLIS_FACTORY_RAIL_SECRET);
+  // GO requires its own 256-bit key; inert placeholders must not authorize calls.
+  if (principal === 'GO' && !/^[a-f0-9]{64}$/i.test(secret))
+    return { ok: false, status: 503, reason: 'GO_FACTORY_RAIL_KEY_NOT_CONFIGURED' };
   if (!secret) return { ok: false, status: 503, reason: 'FACTORY_RAIL_SECRET_NOT_CONFIGURED' };
 
   const protocol = text(request.headers.get('x-metropolis-factory-protocol'));
