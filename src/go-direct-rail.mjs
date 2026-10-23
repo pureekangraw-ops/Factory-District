@@ -1,42 +1,40 @@
-// A GO Brain-originated Factory handoff uses an independently authenticated
-// private Cloudflare Worker rail, not PANTHEON or a caller-supplied URL.
-// This validator deliberately does not mint Work IDs or Work Passes.
-const fail = () => { const error = new Error('GO_FACTORY_SCOPE_DENIED'); error.code = 'GO_FACTORY_SCOPE_DENIED'; throw error; };
-const isText = v => typeof v === 'string' && v.length > 0 && v.length <= 200;
-const hasExactly = (actual, expected) =>
-  Array.isArray(actual) && actual.length === expected.length &&
-  actual.every(x => expected.includes(x));
-const inputRef = value => typeof value === 'string' &&
-  /^r2:\/\/factory\/edge-inputs\/[A-Za-z0-9][A-Za-z0-9._-]{0,100}\.json#sha256=[a-f0-9]{64}$/.test(value);
-export function validateGoDirectHandoff(v) {
-  const w = v?.workPass, actor = 'GO';
-  if (!v || typeof v !== 'object' || Array.isArray(v)) fail();
-  if (!isText(v.workId) || !isText(v.checkpointId) || !isText(v.workPassRef) ||
-      !/^[a-f0-9]{40}$/.test(v.expectedSourceSha || '') || 
-      !isText(v.requestedAt) || !Number.isFinite(Date.parse(v.requestedAt))) fail();
-  if (v.source?.system !== 'go-together' || v.source?.stationId !== 'GO-BRAIN' ||
-      v.target?.system !== 'factory-district' || v.target?.stationId !== 'FACTORY-STATION' ||
-      v.target?.component !== 'FACTORY_HALL') fail();
-  if (w?.kind !== 'WORK_PASS' || w.version !== 'WORK_PASS_V1' ||
-      w.status !== 'ACTIVE' || w.actor !== actor || w.authorityTransferred === true ||
-      w.workId !== v.workId || w.checkpointId !== v.checkpointId ||
-      !isText(w.passId) || v.workPassRef !== 'work-pass://' + w.passId ||
-      !Array.isArray(w.permissions?.actions) || !w.permissions.actions.includes('handoff') ||
-      !Array.isArray(w.permissions?.handoff) ||
-      !w.permissions.handoff.some(x => x?.stationId === 'FACTORY_STATION')) fail();
-  // No second actor, delegation or caller-chosen operation on this GO rail.
-  if (v.actingActor != null || v.cityAuthorization != null || v.operation != null ||
-      v.credential != null || v.secret != null || v.token != null) fail();
-  const domain = v.ownerDomain;
-  if (domain === 'CODE') {
-    if (v.intent !== 'EXECUTE_CODE' || !hasExactly(v.scope,['EXECUTE:CODE','DEPLOY:CODE']) ||
-        !Array.isArray(v.inputRefs) || v.inputRefs.length !== 1 || !inputRef(v.inputRefs[0])) fail();
-  } else if (domain === 'VISUAL') {
-    if (v.intent !== 'EXECUTE_VISUAL' || !hasExactly(v.scope,['EXECUTE:VISUAL']) ||
-        !Array.isArray(v.inputRefs) || v.inputRefs.length !== 1 || !inputRef(v.inputRefs[0])) fail();
-  } else if (domain === 'LOGIC') {
-    if (v.intent !== 'PLACE_DWARF_LOGIC_TRAINEE' || !hasExactly(v.scope,['EXECUTE:LOGIC']) ||
-        !Array.isArray(v.inputRefs) || v.inputRefs.length !== 0) fail();
-  } else fail();
-  return v;
+// Internal Factory execution identity. GO authenticates using its independent
+// signed Cloudflare rail; GO never sends or requests a City Work Pass.
+// The original machine contracts remain private implementation details.
+const toHex = bytes => [...new Uint8Array(bytes)].map(x=>x.toString(16).padStart(2,'0')).join('');
+export const GO_REQUEST_ID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export const GO_JOB_ID=/^GOJOB-[a-f0-9]{32}$/;
+export const GO_DOMAINS=Object.freeze(['CODE','VISUAL','LOGIC']);
+export async function factoryJobId(requestId) {
+  if(typeof requestId!=='string'||!GO_REQUEST_ID.test(requestId))
+    throw Object.assign(new Error('GO_REQUEST_ID_INVALID'),{code:'GO_REQUEST_ID_INVALID'});
+  const sha=toHex(await crypto.subtle.digest('SHA-256',
+    new TextEncoder().encode('FACTORY_GO_DIRECT_JOB_V1:'+requestId.toLowerCase())));
+  return 'GOJOB-'+sha.slice(0,32);
+}
+export function createInternalGoHandoff({jobId,domain,inputRef=null,sourceSha}) {
+  if(!GO_JOB_ID.test(jobId)||!GO_DOMAINS.includes(domain)||
+    !/^[a-f0-9]{40}$/.test(sourceSha||'')||
+    (domain==='LOGIC' ? inputRef!==null :
+      typeof inputRef!=='string'||!/^r2:\/\/factory\/edge-inputs\/go-[a-f0-9]{64}\.json#sha256=[a-f0-9]{64}$/.test(inputRef)))
+    throw Object.assign(new Error('GO_FACTORY_CONTEXT_INVALID'),{code:'GO_FACTORY_CONTEXT_INVALID'});
+  const checkpointId='CP-'+jobId;
+  const passId='factory-go-'+jobId;
+  const scope=domain==='CODE'?['EXECUTE:CODE','DEPLOY:CODE']:[`EXECUTE:${domain}`];
+  // A private implementation ticket issued AFTER authenticating GO's HMAC,
+  // not a City-issued / caller-supplied Work Pass.
+  const pass={kind:'WORK_PASS',version:'WORK_PASS_V1',status:'ACTIVE',
+    passId,workId:jobId,checkpointId,actor:'GO',issuedBy:'FACTORY_STATION',
+    authorityTransferred:false,
+    permissions:{actions:['handoff'],handoff:[{stationId:'FACTORY_STATION'}]}};
+  return {
+    workId:jobId,checkpointId,workPassRef:'work-pass://'+passId,workPass:pass,
+    ownerDomain:domain,
+    intent:domain==='CODE'?'EXECUTE_CODE':
+      domain==='VISUAL'?'EXECUTE_VISUAL':'PLACE_DWARF_LOGIC_TRAINEE',
+    scope,inputRefs:inputRef?[inputRef]:[],
+    expectedSourceSha:sourceSha,requestedAt:new Date().toISOString(),
+    source:{stationId:'GO-BRAIN',system:'go-together'},
+    target:{stationId:'FACTORY-STATION',system:'factory-district',component:'FACTORY_HALL'}
+  };
 }
