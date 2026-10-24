@@ -6,7 +6,7 @@ import { createPixieOperator } from './pixie-autonomous.mjs';
 import { BUILD_SOURCE_SHA } from './build-source-identity.mjs';
 import { authenticateRailRequest, railTransportHealth, validatePantheonHandoff, GO_AUTH_PROBE_PURPOSE, signGoAuthProbe } from './rail-auth.mjs';
 import { createConfiguredMachinery } from './configured-machinery.mjs';
-import { createDwarfLogicTraineeRunner } from './dwarf-logic-trainee.mjs';
+import { createLogicDispatcher } from './logic-dispatcher.mjs';
 import { prepareGoJobInput, validateGoJobSpec } from './go-direct-input.mjs';
 import { factoryJobId, createInternalGoHandoff } from './go-direct-rail.mjs';
 
@@ -57,7 +57,8 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
           ? {
               ...runtime.health(),
               transport,
-              machinery: Object.fromEntries(['CODE', 'VISUAL', 'LOGIC'].map(domain => [domain, {
+              machinery: Object.fromEntries(['CODE', 'VISUAL', 'LOGIC'].map(domain => [domain,
+                domain === 'LOGIC' && domainRunners.LOGIC?.readiness ? domainRunners.LOGIC.readiness : {
                 status: typeof domainRunners[domain] === 'function' ? 'READY' : 'UNKNOWN',
                 reason: typeof domainRunners[domain] === 'function' ? null : 'MACHINE_NOT_REGISTERED',
               }])),
@@ -344,7 +345,8 @@ export default {
   fetch(request, env) {
     const recordStore = env.RECORD_STORE ? createR2RecordStore(env.RECORD_STORE) : undefined;
     const runtimeEnv = { ...env, SOURCE_SHA: BUILD_SOURCE_SHA !== 'UNKNOWN' ? BUILD_SOURCE_SHA : env.SOURCE_SHA || 'UNKNOWN' };
-    const domainRunners = recordStore ? { ...createConfiguredMachinery(env, recordStore), LOGIC: createDwarfLogicTraineeRunner({ store: recordStore }) } : {};
+    const domainRunners = recordStore ? { ...createConfiguredMachinery(env, recordStore) } : {};
+    if (recordStore) domainRunners.LOGIC = createLogicDispatcher({ store: recordStore, runner: domainRunners.LOGIC });
     return createFactoryWorker(runtimeEnv, { recordStore, domainRunners }).fetch(request);
   },
 };

@@ -153,7 +153,7 @@ for (const intent of ['logic_create', 'EXECUTE', 'DWARF_LOGIC_WORKBENCH_TRAINING
     const received = await request(app, '/station/receive', { body: input });
     assert.equal(received.status, 409);
     assert.equal(received.body.readback.domainVerified, false);
-    assert.equal(received.body.receipt.reason, 'DWARF_LOGIC_INTENT_NOT_SUPPORTED');
+    assert.equal(received.body.receipt.reason, 'LOGIC_RUNNER_NOT_CONFIGURED');
     assert.equal(received.body.readback.machineResult.run.verificationRef, null);
     assert.deepEqual(received.body.readback.machineResult.run.evidenceRefs, []);
     assert.equal(placementRecords(app.bucket).length, 0);
