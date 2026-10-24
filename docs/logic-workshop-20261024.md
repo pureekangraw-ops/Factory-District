@@ -144,3 +144,40 @@ node scripts/go-logic-readiness-interop.mjs /path/to/Go-Together/worker/factory-
 The GO module is verified against main `3dfd2d59f54d333e1236bd7c056efe4b213b44eb`.
 Exact final test counts, commit and CI runs are reported in the PR handoff. These
 are engineering/local integration results, not live B2E acceptance.
+
+## Integrity review corrections
+
+The independent review of `d7da9273` found three defects, reproduced against that
+exact module in a disposable local copy. Eight focused regressions fail on the
+old module and pass with the corrections; full local regression is 294/294.
+
+- Decisions now persist a monotonically increasing `decisionSequence` and
+  `latestDecisionIds[versionId]` under the subject CAS. Lifecycle and export use
+  that reference, never object-key enumeration or timestamps. Numeric and mixed
+  IDs therefore cannot make an older approval override a later rejection.
+  Legacy draft Workshop aggregates without decision-order metadata cannot infer
+  approval order: their decision projection is UNKNOWN and new decisions require
+  explicit reconciliation. No deployed records were migrated.
+- Comparison checks exact suite case coverage, unique case IDs, terminal PASS/FAIL
+  results, recomputed outcomes/metrics and digest-verified actual/expected evidence.
+  UNKNOWN, incomplete or ERROR runs cannot establish comparative qualification.
+  Same-suite/environment comparisons lacking proof retain INCOMPLETE_EVIDENCE with
+  null deltas/regressions. Qualification and export revalidate underlying evidence,
+  including previously created comparisons. Failed/UNKNOWN history remains intact.
+- Registration validates manifest/object/array/reference shapes and resolves all
+  required immutable content: subject I/O schemas; AGENT prompt, policy and authority
+  configuration; RUNNER workflow graph, execution policies and each step's I/O
+  schema. Nonempty roles, typed reference arrays and unique step IDs are required.
+  Empty tool/step lists remain valid for synthetic/no-tool subjects. Tool/capability
+  and optional provider/model identity URIs are opaque names with explicit schemes
+  (`tool://`, `capability://`, `provider://`, `model://`), never fetched. Content-addressed
+  alternatives resolve through the Workshop store. Required configuration refs
+  cannot be replaced by external identities. The content checks run again before
+  testing, qualification and export, so missing/corrupt configuration cannot become
+  executable or exportable after registration.
+
+Focused regressions include decreasing numeric/mixed decision IDs, evidence-write
+failure leaving an UNKNOWN baseline, evidence loss after comparison/approval,
+incomplete case coverage, dangling AGENT/RUNNER refs, malformed manifest fields,
+and opaque external identities without external fetching. No generic GO API,
+production provider, credential or live execution scope was added by these fixes.

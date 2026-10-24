@@ -197,3 +197,86 @@ test('concurrent operation claims execute test cases once',async()=>{
   assert.equal(result.output.status,'FAIL');
   assert.equal(f.calls,1);
 });
+
+for(const [approvedId,rejectedId] of [['10','2'],['owner-approved','3'],['20','owner-rejected']]) {
+  test(`latest decision follows CAS sequence, not key enumeration: ${approvedId} then ${rejectedId}`,async()=>{
+    const f=await setup();await f.candidate('V1',f.improved);await f.tests('BASE',null);await f.tests('GOOD','V1');
+    await f.run({operation:'COMPARE_BASELINE',comparisonId:'CMP',baselineTestRunId:'BASE',candidateTestRunId:'GOOD'});
+    await f.run({operation:'OWNER_QUALIFY',decisionId:approvedId,versionId:'V1',comparisonId:'CMP'});
+    const authorize=f.provider.authorize;
+    f.provider.authorize=async input=>({...await authorize(input),qualificationApproved:false});
+    await f.run({operation:'OWNER_QUALIFY',decisionId:rejectedId,decision:'REJECTED',versionId:'V1',comparisonId:'CMP'});
+    const state=await f.workshop.snapshot('SUB-AGENT');
+    assert.equal(state.versionStates.V1,'REJECTED');
+    assert.equal(state.latestDecisionIds.V1,rejectedId);
+    assert.equal(state.decisions[approvedId].sequence,1);assert.equal(state.decisions[rejectedId].sequence,2);
+    const blocked=await f.run({operation:'EXPORT_PACKAGE',packageId:'OLD-APPROVAL',versionId:'V1',decisionId:approvedId},'FAIL');
+    assert.equal(blocked.error.code,'PACKAGE_DECISION_MISMATCH');
+    assert.equal(state.decisions[approvedId].status,'QUALIFIED','old history remains intact');
+  });
+}
+
+test('evidence-storage failure leaves UNKNOWN baseline and cannot qualify a passing candidate',async()=>{
+  const f=await setup();await f.candidate('V1',f.improved);
+  const brokenStore={...f.store,put:async(key,...args)=>{
+    if(key.includes('/content/')) throw Error('LOCAL_EVIDENCE_STORAGE_FAILURE');
+    return f.store.put(key,...args);
+  }};
+  const broken=createLogicWorkshop({store:brokenStore,provider:f.provider});
+  const result=await broken.execute({operation:'RUN_TEST_SUITE',operationId:'BROKEN',subjectId:'SUB-AGENT',testRunId:'BASE',versionId:null,baselineId:'B1',suiteRef:f.suite.ref,suiteSha256:f.suite.sha256,environmentRef:f.environment.ref},f.workFor('BROKEN'));
+  assert.equal(result.status,'FAIL');
+  const retained=(await f.workshop.snapshot('SUB-AGENT')).tests.BASE;
+  assert.equal(retained.status,'UNKNOWN');assert.deepEqual(retained.caseResults,[]);
+  await f.tests('GOOD','V1');
+  const comparison=await f.run({operation:'COMPARE_BASELINE',comparisonId:'CMP',baselineTestRunId:'BASE',candidateTestRunId:'GOOD'});
+  assert.equal(comparison.output.status,'INCOMPLETE_EVIDENCE');assert.equal(comparison.output.deltas,null);
+  assert.equal(comparison.output.completeEvidence,false);
+  const qualification=await f.run({operation:'OWNER_QUALIFY',decisionId:'NO',versionId:'V1',comparisonId:'CMP'},'FAIL');
+  assert.equal(qualification.error.code,'QUALIFICATION_TESTS_REQUIRED');
+  assert.deepEqual((await f.workshop.snapshot('SUB-AGENT')).tests.BASE,retained);
+});
+
+test('qualification and export revalidate comparison evidence after loss or incomplete coverage',async()=>{
+  const f=await setup();await f.candidate('V1',f.improved);await f.tests('BASE',null);await f.tests('GOOD','V1');
+  await f.run({operation:'COMPARE_BASELINE',comparisonId:'CMP',baselineTestRunId:'BASE',candidateTestRunId:'GOOD'});
+  await f.run({operation:'OWNER_QUALIFY',decisionId:'YES',versionId:'V1',comparisonId:'CMP'});
+  const state=await f.workshop.snapshot('SUB-AGENT');
+  const proofKey=state.tests.BASE.caseResults[0].evidenceRefs[0].slice('r2://factory/records/'.length);
+  const proof=await f.store.get(proofKey);
+  await f.store.put(proofKey,{...proof.value,content:{missing:true}},{expectedVersion:proof.version});
+  await f.run({operation:'OWNER_QUALIFY',decisionId:'NO',versionId:'V1',comparisonId:'CMP'},'FAIL');
+  await f.run({operation:'EXPORT_PACKAGE',packageId:'NO',versionId:'V1',decisionId:'YES'},'FAIL');
+  const key='logic/workshop/v1/subjects/SUB-AGENT',record=await f.store.get(key);
+  record.value.tests.BASE.caseResults=[];
+  await f.store.put(key,record.value,{expectedVersion:record.version});
+  await f.run({operation:'OWNER_QUALIFY',decisionId:'INCOMPLETE',versionId:'V1',comparisonId:'CMP'},'FAIL');
+});
+
+for(const kind of ['AGENT','RUNNER']) test(`${kind}: reject dangling required content and malformed manifest fields before execution`,async()=>{
+  const f=await setup(kind), subject=(await f.workshop.snapshot(`SUB-${kind}`)).subject;
+  const valid=await readWorkshopContent(f.store,subject.manifestRef);
+  const dangling='r2://factory/records/logic/workshop/v1/content/'+'f'.repeat(64);
+  const fields=kind==='AGENT'?['promptRef','policyRef','authorityRef']:['workflowGraphRef','timeoutPolicyRef','retryPolicyRef','idempotencyPolicyRef','recoveryPolicyRef'];
+  const bad=[...fields.map(field=>({[field]:dangling})),kind==='AGENT'?{role:42}:{stepContracts:'not-an-array'},kind==='AGENT'?{toolCapabilityRefs:42}:{toolRefs:[{}]}];
+  let index=0;
+  for(const patch of bad) {
+    const subjectId=`BAD-${kind}-${++index}`, manifest=await f.put({...valid,...patch});
+    const registration=await f.run({operation:'REGISTER_SUBJECT',subjectId,kind,ownerSystem:'METROPOLIS',manifestRef:manifest.ref,inputSchemaRef:subject.inputSchemaRef,outputSchemaRef:subject.outputSchemaRef},'FAIL');
+    assert.ok(registration.error);
+    assert.equal((await f.workshop.snapshot(subjectId)).subject,null);
+    await assert.rejects(f.run({operation:'CREATE_CANDIDATE',subjectId,versionId:'NO',baselineId:'NO'}),/SUBJECT_NOT_FOUND/);
+  }
+  assert.equal(f.calls,0);
+});
+
+test('external tool/provider/model identities stay opaque; required content is rechecked before execution',async()=>{
+  const f=await setup(), subject=(await f.workshop.snapshot('SUB-AGENT')).subject;
+  const original=await readWorkshopContent(f.store,subject.manifestRef);
+  const manifest=await f.put({...original,toolCapabilityRefs:['capability://local/read','tool://local/echo'],providerRef:'provider://local',modelRef:'model://synthetic'});
+  await f.run({operation:'REGISTER_SUBJECT',subjectId:'EXTERNAL',kind:'AGENT',ownerSystem:'METROPOLIS',manifestRef:manifest.ref,inputSchemaRef:subject.inputSchemaRef,outputSchemaRef:subject.outputSchemaRef});
+  await f.candidate('V1');
+  const key=original.promptRef.slice('r2://factory/records/'.length), record=await f.store.get(key);
+  await f.store.put(key,{...record.value,content:false},{expectedVersion:record.version});
+  await f.run({operation:'RUN_TEST_SUITE',testRunId:'NO',versionId:'V1',baselineId:'B1',suiteRef:f.suite.ref,suiteSha256:f.suite.sha256,environmentRef:f.environment.ref},'FAIL');
+  assert.equal(f.calls,0);
+});

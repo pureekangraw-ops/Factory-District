@@ -47,15 +47,99 @@ export async function readWorkshopContent(store, contentRef, expectedHash) {
   return structuredClone(record.value.content);
 }
 
+// Required configuration refs are immutable Workshop content. Tool/provider/model
+// identities are names only: validate their shape, never fetch them as content.
+async function validateSubjectContent(store, subject) {
+  const object = value => value && typeof value === 'object' && !Array.isArray(value);
+  const load = r => readWorkshopContent(store,r);
+  const schema = async r => { const value=await load(r); if(typeof value!=='boolean'&&!object(value)) fail('MANIFEST_SCHEMA_INVALID'); };
+  const storedObject = async r => { if(!object(await load(r))) fail('MANIFEST_CONTENT_SHAPE_INVALID'); };
+  const identity = async (r, schemes) => {
+    text(r,'identityRef');
+    if(r.startsWith('r2://')) { await load(r); return; }
+    const match=r.match(/^([a-z]+):\/\/([A-Za-z0-9_.:/-]+)$/);
+    if(!match||!schemes.includes(match[1])) fail('MANIFEST_IDENTITY_REF_INVALID');
+  };
+  const refs = async (values, schemes) => {
+    if(!Array.isArray(values)) fail('MANIFEST_REFS_ARRAY_REQUIRED');
+    for(const r of values) await identity(r,schemes);
+  };
+  const manifest=await load(subject.manifestRef);
+  if(!object(manifest)) fail('MANIFEST_OBJECT_REQUIRED');
+  await schema(subject.inputSchemaRef); await schema(subject.outputSchemaRef);
+  if(subject.kind==='AGENT') {
+    text(manifest.role,'manifest.role');
+    const prompt=await load(manifest.promptRef);
+    if(!(typeof prompt==='string'&&prompt.trim())&&!object(prompt)) fail('MANIFEST_PROMPT_INVALID');
+    await refs(manifest.toolCapabilityRefs,['capability','tool']);
+    await storedObject(manifest.policyRef); await storedObject(manifest.authorityRef);
+    if(manifest.providerRef!==undefined) await identity(manifest.providerRef,['provider']);
+    if(manifest.modelRef!==undefined) await identity(manifest.modelRef,['model']);
+  } else if(subject.kind==='RUNNER') {
+    await storedObject(manifest.workflowGraphRef);
+    await refs(manifest.toolRefs,['tool','capability']);
+    for(const field of ['timeoutPolicyRef','retryPolicyRef','idempotencyPolicyRef','recoveryPolicyRef']) await storedObject(manifest[field]);
+    if(!Array.isArray(manifest.stepContracts)) fail('MANIFEST_STEP_CONTRACTS_INVALID');
+    const seen=new Set();
+    for(const step of manifest.stepContracts) {
+      if(!object(step)) fail('MANIFEST_STEP_CONTRACT_INVALID');
+      id(step.stepId,'stepId'); if(seen.has(step.stepId)) fail('MANIFEST_DUPLICATE_STEP'); seen.add(step.stepId);
+      await schema(step.inputSchemaRef); await schema(step.outputSchemaRef);
+      if(step.toolRef!==undefined) await identity(step.toolRef,['tool','capability']);
+    }
+  } else fail('WORKSHOP_SUBJECT_KIND_INVALID');
+  return manifest;
+}
+
+async function completeTestEvidence(store, run) {
+  try {
+    if(!run||!['PASS','FAIL'].includes(run.status)) return false;
+    const suite=await readWorkshopContent(store,run.suiteRef,run.suiteSha256);
+    await readWorkshopContent(store,run.environmentRef);
+    if(!Array.isArray(suite.cases)||!suite.cases.length||suite.cases.length>64
+      ||!Array.isArray(run.caseResults)||run.caseResults.length!==suite.cases.length) return false;
+    const ids=new Set(suite.cases.map(c=>c.caseId));
+    if(ids.size!==suite.cases.length||new Set(run.caseResults.map(c=>c.caseId)).size!==ids.size) return false;
+    let passed=0; const evidence=[];
+    for(const item of suite.cases) {
+      const result=run.caseResults.find(r=>r.caseId===item.caseId);
+      if(!result||!['PASS','FAIL'].includes(result.status)||result.evidenceRefs?.length!==1) return false;
+      const proof=await readWorkshopContent(store,result.evidenceRefs[0]);
+      const expected=await readWorkshopContent(store,item.expectedRef);
+      await readWorkshopContent(store,item.inputRef);
+      if(proof.caseId!==item.caseId||canonical(proof.expected)!==canonical(expected)) return false;
+      const status=canonical(proof.actual)===canonical(expected)?'PASS':'FAIL';
+      if(result.status!==status) return false;
+      if(status==='PASS') passed++;
+      evidence.push(...result.evidenceRefs);
+    }
+    return run.metrics?.total===ids.size&&run.metrics?.passed===passed
+      &&run.status===(passed===ids.size?'PASS':'FAIL')
+      &&canonical(run.evidenceRefs)===canonical(evidence);
+  } catch { return false; }
+}
+
 // One CAS aggregate per subject preserves cross-entity integrity and serializes
 // effects. A reserved operation is never blindly replayed after an uncertain write.
 export function createLogicWorkshop({ store, provider, clock = () => new Date().toISOString() }) {
   assertDurableStore(store);
   if (typeof provider?.authorize !== 'function' || typeof provider?.runCase !== 'function') fail('WORKSHOP_PROVIDER_REQUIRED');
   const subjectKey = subjectId => `${prefix}subjects/${id(subjectId,'subjectId')}`;
+  function latestDecision(state, versionId) {
+    const decision=state.decisions[state.latestDecisionIds?.[versionId]];
+    return decision?.versionId===versionId&&Number.isSafeInteger(decision.sequence)&&decision.sequence>0?decision:null;
+  }
+  async function qualificationEvidence(state, comparison, versionId) {
+    if(comparison.versionId!==versionId||comparison.baselineTestRunIds?.length!==1||comparison.candidateTestRunIds?.length!==1) return false;
+    const a=state.tests[comparison.baselineTestRunIds[0]],b=state.tests[comparison.candidateTestRunIds[0]];
+    if(!a||!b||a.versionId!==null||b.versionId!==versionId||a.baselineId!==b.baselineId||b.status!=='PASS'
+      ||a.suiteSha256!==b.suiteSha256||a.environmentRef!==b.environmentRef) return false;
+    return await completeTestEvidence(store,a)&&await completeTestEvidence(store,b);
+  }
   function versionState(state, versionId) {
-    const decisions=Object.values(state.decisions).filter(d=>d.versionId===versionId);
-    return decisions.at(-1)?.status || (Object.values(state.tests).some(t=>t.versionId===versionId)?'TESTED':'DRAFT');
+    const decision=latestDecision(state,versionId);
+    if(!decision&&Object.values(state.decisions).some(d=>d.versionId===versionId)) return 'UNKNOWN';
+    return decision?.status || (Object.values(state.tests).some(t=>t.versionId===versionId)?'TESTED':'DRAFT');
   }
   async function snapshot(subjectId) {
     const state=(await store.get(subjectKey(subjectId)))?.value || null;
@@ -68,7 +152,7 @@ export function createLogicWorkshop({ store, provider, clock = () => new Date().
     id(c.operationId,'operationId'); id(c.subjectId,'subjectId');
     if (work?.ownerDomain !== 'LOGIC' || work.intent !== 'LOGIC_WORKSHOP' || !work.scope?.includes('EXECUTE:LOGIC')) fail('WORKSHOP_SCOPE_DENIED');
     const key = subjectKey(c.subjectId), record = await store.get(key);
-    const state = record?.value || { revision: WORKSHOP_REVISION, subject: null, baselines: {}, versions: {}, tests: {}, comparisons: {}, rcas: {}, decisions: {}, packages: {}, operations: {}, pending: null };
+    const state = record?.value || { revision: WORKSHOP_REVISION, subject: null, baselines: {}, versions: {}, tests: {}, comparisons: {}, rcas: {}, decisions: {}, decisionSequence: 0, latestDecisionIds: {}, packages: {}, operations: {}, pending: null };
     let grant;
     try { grant = await provider.authorize({ command: c, work, ownerSystem: state.subject?.ownerSystem || c.ownerSystem }); }
     catch { fail('WORKSHOP_AUTHORIZATION_UNAVAILABLE'); }
@@ -102,11 +186,7 @@ export function createLogicWorkshop({ store, provider, clock = () => new Date().
           if (state.subject) fail('WORKSHOP_SUBJECT_EXISTS');
           if (!['AGENT','RUNNER'].includes(c.kind)) fail('WORKSHOP_SUBJECT_KIND_INVALID');
           text(c.ownerSystem,'ownerSystem');
-          const manifest = await content(c.manifestRef);
-          await content(c.inputSchemaRef); await content(c.outputSchemaRef);
-          const fields = c.kind === 'AGENT' ? ['role','promptRef','toolCapabilityRefs','policyRef','authorityRef']
-            : ['workflowGraphRef','stepContracts','toolRefs','timeoutPolicyRef','retryPolicyRef','idempotencyPolicyRef','recoveryPolicyRef'];
-          for (const field of fields) if (manifest[field] === undefined || manifest[field] === null) fail(`MANIFEST_${field}_REQUIRED`);
+          await validateSubjectContent(store,c);
           state.subject = { subjectId:c.subjectId,kind:c.kind,ownerSystem:c.ownerSystem,manifestRef:c.manifestRef,inputSchemaRef:c.inputSchemaRef,outputSchemaRef:c.outputSchemaRef,createdAt:at };
           output = state.subject; break;
         }
@@ -129,6 +209,7 @@ export function createLogicWorkshop({ store, provider, clock = () => new Date().
           output=state.versions[c.versionId]={versionId:c.versionId,subjectId:c.subjectId,baselineId:b.baselineId,parentVersionId:c.parentVersionId||null,rcaId:c.rcaId||null,configRef:c.configRef,configSha256:c.configSha256,changeNote:c.changeNote,createdAt:at,status:'DRAFT'}; break;
         }
         case 'RUN_TEST_SUITE': {
+          await validateSubjectContent(store,state.subject);
           fresh(state.tests,c.testRunId,'testRunId'); const b=baseline(c.baselineId);
           const v=c.versionId===null ? null : version(c.versionId);
           if(v && v.baselineId!==b.baselineId) fail('TEST_BASELINE_MISMATCH');
@@ -158,8 +239,10 @@ export function createLogicWorkshop({ store, provider, clock = () => new Date().
           fresh(state.comparisons,c.comparisonId,'comparisonId');
           const a=entity(state.tests,c.baselineTestRunId,'baselineTestRunId'), b=entity(state.tests,c.candidateTestRunId,'candidateTestRunId');
           if(a.versionId!==null || b.versionId===null || a.baselineId!==b.baselineId) fail('COMPARISON_LINEAGE_MISMATCH');
-          const comparable=a.suiteSha256===b.suiteSha256 && a.environmentRef===b.environmentRef;
-          output=state.comparisons[c.comparisonId]={comparisonId:c.comparisonId,subjectId:c.subjectId,versionId:b.versionId,baselineTestRunIds:[a.testRunId],candidateTestRunIds:[b.testRunId],comparableSuiteAndEnv:comparable,status:comparable?'COMPARED':'NOT_COMPARABLE',deltas:comparable?{passed:b.metrics.passed-a.metrics.passed}:null,regressions:comparable?a.caseResults.filter(x=>x.status==='PASS'&&b.caseResults.find(y=>y.caseId===x.caseId)?.status!=='PASS').map(x=>x.caseId):null,evidenceRefs:[...a.evidenceRefs,...b.evidenceRefs],createdAt:at}; break;
+          const sameContext=a.suiteSha256===b.suiteSha256 && a.environmentRef===b.environmentRef;
+          const completeEvidence=await completeTestEvidence(store,a)&&await completeTestEvidence(store,b);
+          const comparable=sameContext&&completeEvidence;
+          output=state.comparisons[c.comparisonId]={comparisonId:c.comparisonId,subjectId:c.subjectId,versionId:b.versionId,baselineTestRunIds:[a.testRunId],candidateTestRunIds:[b.testRunId],comparableSuiteAndEnv:sameContext,completeEvidence,status:!sameContext?'NOT_COMPARABLE':completeEvidence?'COMPARED':'INCOMPLETE_EVIDENCE',deltas:comparable?{passed:b.metrics.passed-a.metrics.passed}:null,regressions:comparable?a.caseResults.filter(x=>x.status==='PASS'&&b.caseResults.find(y=>y.caseId===x.caseId)?.status!=='PASS').map(x=>x.caseId):null,evidenceRefs:[...a.evidenceRefs,...b.evidenceRefs],createdAt:at}; break;
         }
         case 'RECORD_RCA': {
           fresh(state.rcas,c.rcaId,'rcaId'); version(c.versionId);
@@ -171,12 +254,18 @@ export function createLogicWorkshop({ store, provider, clock = () => new Date().
           fresh(state.decisions,c.decisionId,'decisionId'); const v=version(c.versionId), comparison=entity(state.comparisons,c.comparisonId,'comparisonId');
           const decision=c.decision || 'QUALIFIED';
           if(!['QUALIFIED','REJECTED'].includes(decision)||!grant.ownerDecisionRef || grant.qualificationApproved!==(decision==='QUALIFIED')) fail('OWNER_QUALIFICATION_REQUIRED');
-          if(comparison.versionId!==v.versionId || (decision==='QUALIFIED' && (!comparison.comparableSuiteAndEnv||comparison.regressions.length||comparison.candidateTestRunIds.some(t=>state.tests[t].status!=='PASS')))) fail('QUALIFICATION_TESTS_REQUIRED');
-          output=state.decisions[c.decisionId]={decisionId:c.decisionId,subjectId:c.subjectId,versionId:v.versionId,comparisonId:c.comparisonId,status:decision,actor:grant.actor,ownerDecisionRef:text(grant.ownerDecisionRef,'ownerDecisionRef'),createdAt:at}; break;
+          if(comparison.versionId!==v.versionId || (decision==='QUALIFIED' && !await qualificationEvidence(state,comparison,v.versionId))) fail('QUALIFICATION_TESTS_REQUIRED');
+          await validateSubjectContent(store,state.subject);
+          if(!Number.isSafeInteger(state.decisionSequence)||state.decisionSequence<0||state.decisionSequence>=Number.MAX_SAFE_INTEGER||!state.latestDecisionIds) fail('DECISION_ORDER_UNVERIFIED');
+          const sequence=state.decisionSequence+1;
+          output=state.decisions[c.decisionId]={decisionId:c.decisionId,sequence,subjectId:c.subjectId,versionId:v.versionId,comparisonId:c.comparisonId,status:decision,actor:grant.actor,ownerDecisionRef:text(grant.ownerDecisionRef,'ownerDecisionRef'),createdAt:at};
+          state.decisionSequence=sequence; state.latestDecisionIds[v.versionId]=c.decisionId; break;
         }
         case 'EXPORT_PACKAGE': {
           fresh(state.packages,c.packageId,'packageId'); const v=version(c.versionId), decision=entity(state.decisions,c.decisionId,'decisionId');
-          if(decision.versionId!==v.versionId || decision.status!=='QUALIFIED' || versionState(state,v.versionId)!=='QUALIFIED' || Object.values(state.decisions).filter(d=>d.versionId===v.versionId).at(-1).decisionId!==decision.decisionId) fail('PACKAGE_DECISION_MISMATCH');
+          if(decision.versionId!==v.versionId || decision.status!=='QUALIFIED' || versionState(state,v.versionId)!=='QUALIFIED' || latestDecision(state,v.versionId)?.decisionId!==decision.decisionId) fail('PACKAGE_DECISION_MISMATCH');
+          await validateSubjectContent(store,state.subject);
+          if(!await qualificationEvidence(state,state.comparisons[decision.comparisonId],v.versionId)) fail('QUALIFICATION_TESTS_REQUIRED');
           const payload={revision:WORKSHOP_REVISION,subject:state.subject,manifest:await content(state.subject.manifestRef),config:await content(v.configRef,v.configSha256),candidate:{...v,status:versionState(state,v.versionId)},baseline:baseline(v.baselineId),tests:Object.values(state.tests).filter(t=>t.baselineId===v.baselineId&&(t.versionId===null||t.versionId===v.versionId)),comparison:state.comparisons[decision.comparisonId],decision,workId:work.workId,checkpointId:work.checkpointId,receiptBinding:'OUTER_FACTORY_RECEIPT_AND_READBACK',productionPublished:false};
           const artifact=await putWorkshopContent(store,payload);
           output=state.packages[c.packageId]={packageId:c.packageId,versionId:v.versionId,...artifact}; break;
