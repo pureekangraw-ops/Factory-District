@@ -1,3 +1,4 @@
+import { assertWorkshopSchema, matchesWorkshopSchema, requireWorkshopSchema } from './workshop-schema.mjs';
 import { assertDurableStore } from './durable-store.mjs';
 
 export const WORKSHOP_REVISION = 'LOGIC_WORKSHOP_V0_1';
@@ -52,7 +53,7 @@ export async function readWorkshopContent(store, contentRef, expectedHash) {
 async function validateSubjectContent(store, subject) {
   const object = value => value && typeof value === 'object' && !Array.isArray(value);
   const load = r => readWorkshopContent(store,r);
-  const schema = async r => { const value=await load(r); if(typeof value!=='boolean'&&!object(value)) fail('MANIFEST_SCHEMA_INVALID'); };
+  const schema = async r => assertWorkshopSchema(await load(r));
   const storedObject = async r => { if(!object(await load(r))) fail('MANIFEST_CONTENT_SHAPE_INVALID'); };
   const identity = async (r, schemes) => {
     text(r,'identityRef');
@@ -91,9 +92,11 @@ async function validateSubjectContent(store, subject) {
   return manifest;
 }
 
-async function completeTestEvidence(store, run) {
+async function completeTestEvidence(store, run, subject) {
   try {
     if(!run||!['PASS','FAIL'].includes(run.status)) return false;
+    const inputSchema=assertWorkshopSchema(await readWorkshopContent(store,subject.inputSchemaRef));
+    const outputSchema=assertWorkshopSchema(await readWorkshopContent(store,subject.outputSchemaRef));
     const suite=await readWorkshopContent(store,run.suiteRef,run.suiteSha256);
     await readWorkshopContent(store,run.environmentRef);
     if(!Array.isArray(suite.cases)||!suite.cases.length||suite.cases.length>64
@@ -106,7 +109,8 @@ async function completeTestEvidence(store, run) {
       if(!result||!['PASS','FAIL'].includes(result.status)||result.evidenceRefs?.length!==1) return false;
       const proof=await readWorkshopContent(store,result.evidenceRefs[0]);
       const expected=await readWorkshopContent(store,item.expectedRef);
-      await readWorkshopContent(store,item.inputRef);
+      const input=await readWorkshopContent(store,item.inputRef);
+      if(!matchesWorkshopSchema(inputSchema,input)||!matchesWorkshopSchema(outputSchema,expected)||!matchesWorkshopSchema(outputSchema,proof.actual)) return false;
       if(proof.caseId!==item.caseId||canonical(proof.expected)!==canonical(expected)) return false;
       const status=canonical(proof.actual)===canonical(expected)?'PASS':'FAIL';
       if(result.status!==status) return false;
@@ -134,7 +138,7 @@ export function createLogicWorkshop({ store, provider, clock = () => new Date().
     const a=state.tests[comparison.baselineTestRunIds[0]],b=state.tests[comparison.candidateTestRunIds[0]];
     if(!a||!b||a.versionId!==null||b.versionId!==versionId||a.baselineId!==b.baselineId||b.status!=='PASS'
       ||a.suiteSha256!==b.suiteSha256||a.environmentRef!==b.environmentRef) return false;
-    return await completeTestEvidence(store,a)&&await completeTestEvidence(store,b);
+    return await completeTestEvidence(store,a,state.subject)&&await completeTestEvidence(store,b,state.subject);
   }
   function versionState(state, versionId) {
     const decision=latestDecision(state,versionId);
@@ -217,6 +221,7 @@ export function createLogicWorkshop({ store, provider, clock = () => new Date().
           const suite=await content(c.suiteRef,digestRequired(c.suiteSha256)); await content(c.environmentRef);
           if(!Array.isArray(suite.cases)||suite.cases.length<1||suite.cases.length>64||new Set(suite.cases.map(x=>x.caseId)).size!==suite.cases.length) fail('TEST_SUITE_INVALID');
           const config=await content(v?.configRef||b.configRef,v?.configSha256||b.configSha256);
+          const inputSchema=await content(state.subject.inputSchemaRef),outputSchema=await content(state.subject.outputSchemaRef);
           const prepared=[];
           for(const item of suite.cases) { id(item.caseId,'caseId'); prepared.push({caseId:item.caseId,input:await content(item.inputRef),expected:await content(item.expectedRef)}); }
           state.tests[c.testRunId]={testRunId:c.testRunId,subjectId:c.subjectId,versionId:v?.versionId||null,baselineId:b.baselineId,suiteRef:c.suiteRef,suiteSha256:c.suiteSha256,environmentRef:c.environmentRef,caseResults:[],metrics:{total:prepared.length,passed:0},evidenceRefs:[],status:'UNKNOWN',observedAt:at};
@@ -224,12 +229,16 @@ export function createLogicWorkshop({ store, provider, clock = () => new Date().
           const results=[];
           for(const item of prepared) {
             try {
+              requireWorkshopSchema(inputSchema,item.input,'INPUT');
+              requireWorkshopSchema(outputSchema,item.expected,'EXPECTED_OUTPUT');
               const actual=await provider.runCase({ subject:state.subject,config,environmentRef:c.environmentRef,caseId:item.caseId,input:item.input,work });
+              requireWorkshopSchema(outputSchema,actual,'OUTPUT');
               const evidence=await putWorkshopContent(store,{caseId:item.caseId,actual,expected:item.expected});
               results.push({caseId:item.caseId,status:canonical(actual)===canonical(item.expected)?'PASS':'FAIL',evidenceRefs:[evidence.ref]});
-            } catch {
-              const evidence=await putWorkshopContent(store,{caseId:item.caseId,status:'ERROR',reason:'WORKSHOP_CASE_ERROR'});
-              results.push({caseId:item.caseId,status:'ERROR',evidenceRefs:[evidence.ref],reason:'WORKSHOP_CASE_ERROR'});
+            } catch(error) {
+              const reason=['WORKSHOP_INPUT_SCHEMA_MISMATCH','WORKSHOP_EXPECTED_OUTPUT_SCHEMA_MISMATCH','WORKSHOP_OUTPUT_SCHEMA_MISMATCH'].includes(error.code)?error.code:'WORKSHOP_CASE_ERROR';
+              const evidence=await putWorkshopContent(store,{caseId:item.caseId,status:'ERROR',reason});
+              results.push({caseId:item.caseId,status:'ERROR',evidenceRefs:[evidence.ref],reason});
             }
           }
           const status=results.some(x=>x.status==='ERROR')?'ERROR':results.every(x=>x.status==='PASS')?'PASS':'FAIL';
@@ -240,7 +249,7 @@ export function createLogicWorkshop({ store, provider, clock = () => new Date().
           const a=entity(state.tests,c.baselineTestRunId,'baselineTestRunId'), b=entity(state.tests,c.candidateTestRunId,'candidateTestRunId');
           if(a.versionId!==null || b.versionId===null || a.baselineId!==b.baselineId) fail('COMPARISON_LINEAGE_MISMATCH');
           const sameContext=a.suiteSha256===b.suiteSha256 && a.environmentRef===b.environmentRef;
-          const completeEvidence=await completeTestEvidence(store,a)&&await completeTestEvidence(store,b);
+          const completeEvidence=await completeTestEvidence(store,a,state.subject)&&await completeTestEvidence(store,b,state.subject);
           const comparable=sameContext&&completeEvidence;
           output=state.comparisons[c.comparisonId]={comparisonId:c.comparisonId,subjectId:c.subjectId,versionId:b.versionId,baselineTestRunIds:[a.testRunId],candidateTestRunIds:[b.testRunId],comparableSuiteAndEnv:sameContext,completeEvidence,status:!sameContext?'NOT_COMPARABLE':completeEvidence?'COMPARED':'INCOMPLETE_EVIDENCE',deltas:comparable?{passed:b.metrics.passed-a.metrics.passed}:null,regressions:comparable?a.caseResults.filter(x=>x.status==='PASS'&&b.caseResults.find(y=>y.caseId===x.caseId)?.status!=='PASS').map(x=>x.caseId):null,evidenceRefs:[...a.evidenceRefs,...b.evidenceRefs],createdAt:at}; break;
         }

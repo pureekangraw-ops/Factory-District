@@ -19,7 +19,8 @@ async function setup(kind='AGENT', useWorker=false) {
   };
   const workshop=createLogicWorkshop({store,provider});
   const put=value=>putWorkshopContent(store,value);
-  const schema=await put({type:'object'}), prompt=await put({text:'synthetic'});
+  const outputSchema=await put({type:'number'});
+  const schema=await put({type:'object',properties:{value:{type:'number'}},required:['value'],additionalProperties:false}), prompt=await put({text:'synthetic'});
   const manifest=await put(kind==='AGENT'?{role:'synthetic',promptRef:prompt.ref,toolCapabilityRefs:[],policyRef:prompt.ref,authorityRef:prompt.ref}
     :{workflowGraphRef:prompt.ref,stepContracts:[],toolRefs:[],timeoutPolicyRef:prompt.ref,retryPolicyRef:prompt.ref,idempotencyPolicyRef:prompt.ref,recoveryPolicyRef:prompt.ref});
   const config=await put({increment:0}), improved=await put({increment:1}), crashed=await put({crash:true});
@@ -55,7 +56,7 @@ async function setup(kind='AGENT', useWorker=false) {
     } else result=await workshop.execute(command,workFor(command.operationId));
     assert.equal(result.status,expect,JSON.stringify(result)); return result;
   };
-  await run({operation:'REGISTER_SUBJECT',kind,ownerSystem:'METROPOLIS',manifestRef:manifest.ref,inputSchemaRef:schema.ref,outputSchemaRef:schema.ref});
+  await run({operation:'REGISTER_SUBJECT',kind,ownerSystem:'METROPOLIS',manifestRef:manifest.ref,inputSchemaRef:schema.ref,outputSchemaRef:outputSchema.ref});
   await run({operation:'CAPTURE_BASELINE',baselineId:'B1',initialImportedConfig:true,configRef:config.ref,configSha256:config.sha256,testSuiteRef:suite.ref,testSuiteSha256:suite.sha256,environmentRef:environment.ref});
   const candidate=(versionId, cfg=config,extra={})=>run({operation:'CREATE_CANDIDATE',versionId,baselineId:'B1',configRef:cfg.ref,configSha256:cfg.sha256,changeNote:'synthetic adjustment',...extra});
   const tests=(testRunId,versionId,extra={})=>run({operation:'RUN_TEST_SUITE',testRunId,versionId,baselineId:'B1',suiteRef:suite.ref,suiteSha256:suite.sha256,environmentRef:environment.ref,...extra});
@@ -279,4 +280,36 @@ test('external tool/provider/model identities stay opaque; required content is r
   await f.store.put(key,{...record.value,content:false},{expectedVersion:record.version});
   await f.run({operation:'RUN_TEST_SUITE',testRunId:'NO',versionId:'V1',baselineId:'B1',suiteRef:f.suite.ref,suiteSha256:f.suite.sha256,environmentRef:f.environment.ref},'FAIL');
   assert.equal(f.calls,0);
+});
+
+test('input and expected-output schema mismatch are retained ERROR without calling executor',async()=>{
+  const f=await setup();await f.candidate('V1',f.improved);
+  for(const [name,input,expected,reason] of [
+    ['INPUT',{value:'1'},2,'WORKSHOP_INPUT_SCHEMA_MISMATCH'],
+    ['EXPECTED',{value:1},'2','WORKSHOP_EXPECTED_OUTPUT_SCHEMA_MISMATCH'],
+  ]) {
+    const i=await f.put(input),e=await f.put(expected),suite=await f.put({cases:[{caseId:'one',inputRef:i.ref,expectedRef:e.ref}]});
+    const result=await f.tests(name,'V1',{suiteRef:suite.ref,suiteSha256:suite.sha256});
+    assert.equal(result.output.status,'ERROR');assert.equal(result.output.caseResults[0].reason,reason);
+  }
+  assert.equal(f.calls,0);
+});
+
+test('actual output schema mismatch cannot compare or qualify even with otherwise passing expected value',async()=>{
+  const f=await setup();await f.candidate('V1',f.improved);await f.tests('BASE',null);
+  let calls=0;f.provider.runCase=async()=>{calls++;return '2';};
+  const result=await f.tests('BAD-OUTPUT','V1');
+  assert.equal(calls,1);assert.equal(result.output.status,'ERROR');
+  assert.equal(result.output.caseResults[0].reason,'WORKSHOP_OUTPUT_SCHEMA_MISMATCH');
+  const comparison=await f.run({operation:'COMPARE_BASELINE',comparisonId:'BAD',baselineTestRunId:'BASE',candidateTestRunId:'BAD-OUTPUT'});
+  assert.equal(comparison.output.status,'INCOMPLETE_EVIDENCE');
+  await f.run({operation:'OWNER_QUALIFY',decisionId:'NO',versionId:'V1',comparisonId:'BAD'},'FAIL');
+});
+
+test('unsupported subject schema prevents registration explicitly',async()=>{
+  const f=await setup(),subject=(await f.workshop.snapshot('SUB-AGENT')).subject;
+  const unsupported=await f.put({type:'string',pattern:'.*'});
+  const result=await f.run({operation:'REGISTER_SUBJECT',subjectId:'UNSUPPORTED-SCHEMA',kind:'AGENT',ownerSystem:'METROPOLIS',manifestRef:subject.manifestRef,inputSchemaRef:subject.inputSchemaRef,outputSchemaRef:unsupported.ref},'FAIL');
+  assert.equal(result.error.code,'WORKSHOP_SCHEMA_UNSUPPORTED');
+  assert.equal((await f.workshop.snapshot('UNSUPPORTED-SCHEMA')).subject,null);
 });

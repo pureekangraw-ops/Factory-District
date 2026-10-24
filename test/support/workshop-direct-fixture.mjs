@@ -34,7 +34,8 @@ export async function exerciseWorkshop(client,kind) {
     assert.deepEqual(repeated.workshopResult,first.workshopResult);
     return first;
   };
-  const schema=await put({type:'object'});
+  const schema=await put(kind==='AGENT'?{type:'object',properties:{text:{type:'string'}},required:['text'],additionalProperties:false}:{type:'object',properties:{value:{type:'number'}},required:['value'],additionalProperties:false});
+  const outputSchema=await put({type:kind==='AGENT'?'string':'number'});
   const policy=await put({maxRules:16,allowedFields:['text']}),authority=await put({mode:'ADVISORY_ONLY',tools:[]});
   const prompt=await put({mode:'RULE_BASED',text:'Classify supplied text with explicit rules; no inference.'});
   const graph=await put({allowedOps:['ADD','MULTIPLY']});
@@ -44,7 +45,7 @@ export async function exerciseWorkshop(client,kind) {
   const changed=await put(kind==='AGENT'?{adapter:'RULE_AGENT_V1',rules:[{field:'text',contains:'urgent',output:'high'}],defaultOutput:'normal'}:{adapter:'PIPELINE_RUNNER_V1',steps:[{op:'ADD',value:1},{op:'MULTIPLY',value:2}]});
   const input=await put(kind==='AGENT'?{text:'urgent delivery'}:{value:1}),expected=await put(kind==='AGENT'?'high':4),environment=await put({runtime:'BOUNDED_WORKSHOP_V1',network:false});
   const suite=await put({cases:[{caseId:'actual-result',inputRef:input.ref,expectedRef:expected.ref}]});
-  await run({operation:'REGISTER_SUBJECT',kind,ownerSystem:'go-together',manifestRef:manifest.ref,inputSchemaRef:schema.ref,outputSchemaRef:schema.ref});
+  await run({operation:'REGISTER_SUBJECT',kind,ownerSystem:'go-together',manifestRef:manifest.ref,inputSchemaRef:schema.ref,outputSchemaRef:outputSchema.ref});
   await run({operation:'CAPTURE_BASELINE',baselineId:'B1',initialImportedConfig:true,configRef:initial.ref,configSha256:initial.sha256,testSuiteRef:suite.ref,testSuiteSha256:suite.sha256,environmentRef:environment.ref});
   const candidate=(versionId,config,extra={})=>run({operation:'CREATE_CANDIDATE',versionId,baselineId:'B1',configRef:config.ref,configSha256:config.sha256,changeNote:'explicit bounded adjustment',...extra});
   const testRun=(testRunId,versionId)=>run({operation:'RUN_TEST_SUITE',testRunId,versionId,baselineId:'B1',suiteRef:suite.ref,suiteSha256:suite.sha256,environmentRef:environment.ref});

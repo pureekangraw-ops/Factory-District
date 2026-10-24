@@ -105,3 +105,27 @@ current bindings, especially GOVIEW/Observatory. No config changes are needed.
 Rollback versions must be recorded again at activation. Live acceptance requires
 new bounded synthetic Work IDs after the reviewed code is deployed; no live jobs
 were run during this implementation.
+
+## Schema enforcement correction
+
+Subject and step schema refs are executable contracts, not metadata. Supported
+schemas require exactly one type: object, array, string, number, integer, boolean
+or null. Object schemas additionally support properties, required and boolean
+additionalProperties (default true); array schemas require a supported items
+schema. Schema nesting is limited to eight levels and object properties/required
+lists to 32 entries. Integers must be safe integers; numbers must be finite.
+Boolean schemas, missing/union types, refs, patterns, combinators, numeric/string
+constraints and all other keywords are explicitly rejected with
+WORKSHOP_SCHEMA_UNSUPPORTED rather than silently ignored. No type coercion occurs.
+
+Registration validates this subset. Before each test executor call, input and
+expected output are checked against the stored subject schemas. Actual output is
+checked before PASS/FAIL comparison; a mismatch is retained as ERROR with a specific
+input/expected-output/output schema reason. Comparison, qualification and export
+also revalidate schemas against stored input/expected/actual evidence, so old or
+inconsistent proof cannot qualify merely because actual equals expected.
+
+Fixtures now declare actual intended contracts: Agent input {text:string} and
+output string; Runner input {value:number} and output number. Local syntax checks,
+308/308 Factory tests and the paired GO Agent/Runner flows pass. GO candidate is
+unchanged at c2a984e790e877c0111ea8adf7970e96b1f07a47. No deployment or live test.
