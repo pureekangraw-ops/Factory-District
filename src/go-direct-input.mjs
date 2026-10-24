@@ -1,3 +1,4 @@
+import { validateWorkshopCommand } from './workshop-direct.mjs';
 // Factory-owned immutable job input package; no City Work Pass to prepare.
 export const GO_MAX_INPUT_BYTES=65536;
 const fail=code=>{throw Object.assign(new Error(code),{code});};
@@ -6,6 +7,7 @@ const only=(o,keys)=>o&&typeof o==='object'&&!Array.isArray(o)&&
   Object.keys(o).every(k=>keys.includes(k));
 export function validateGoJobSpec(domain,spec){
   if(domain==='LOGIC') {
+    if(only(spec,['workshop'])&&spec.workshop) { validateWorkshopCommand(spec.workshop); return; }
     if(!only(spec,['placement'])||spec.placement!=='DWARF-01_TRAINING')
       fail('GO_LOGIC_UNSUPPORTED');
     return;

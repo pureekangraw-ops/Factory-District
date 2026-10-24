@@ -23,3 +23,15 @@ jobs:
         run: npm run check
       - name: Test
         run: npm test
+      - name: Checkout reviewed paired GO candidate
+        uses: actions/checkout@v4
+        with:
+          repository: pureekangraw-ops/Go-Together
+          ref: c2a984e790e877c0111ea8adf7970e96b1f07a47
+          path: .interop-go
+          persist-credentials: false
+      - name: Verify signed GO Workshop and legacy interoperability offline
+        run: |
+          node scripts/go-auth-probe-interop.mjs .interop-go/worker/factory-direct.mjs
+          node scripts/go-logic-readiness-interop.mjs .interop-go/worker/factory-direct.mjs
+          node scripts/go-workshop-interop.mjs .interop-go/worker/factory-direct.mjs

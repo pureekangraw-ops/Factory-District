@@ -12,10 +12,10 @@ export async function factoryJobId(requestId) {
     new TextEncoder().encode('FACTORY_GO_DIRECT_JOB_V1:'+requestId.toLowerCase())));
   return 'GOJOB-'+sha.slice(0,32);
 }
-export function createInternalGoHandoff({jobId,domain,inputRef=null,sourceSha}) {
+export function createInternalGoHandoff({jobId,domain,inputRef=null,sourceSha,workshop=false}) {
   if(!GO_JOB_ID.test(jobId)||!GO_DOMAINS.includes(domain)||
     !/^[a-f0-9]{40}$/.test(sourceSha||'')||
-    (domain==='LOGIC' ? inputRef!==null :
+    (domain==='LOGIC' ? (workshop ? !/^r2:\/\/factory\/records\/logic\/workshop\/v1\/content\/[a-f0-9]{64}$/.test(inputRef||'') : inputRef!==null) :
       typeof inputRef!=='string'||!/^r2:\/\/factory\/edge-inputs\/go-[a-f0-9]{64}\.json#sha256=[a-f0-9]{64}$/.test(inputRef)))
     throw Object.assign(new Error('GO_FACTORY_CONTEXT_INVALID'),{code:'GO_FACTORY_CONTEXT_INVALID'});
   const checkpointId='CP-'+jobId;
@@ -31,7 +31,7 @@ export function createInternalGoHandoff({jobId,domain,inputRef=null,sourceSha}) 
     workId:jobId,checkpointId,workPassRef:'work-pass://'+passId,workPass:pass,
     ownerDomain:domain,
     intent:domain==='CODE'?'EXECUTE_CODE':
-      domain==='VISUAL'?'EXECUTE_VISUAL':'PLACE_DWARF_LOGIC_TRAINEE',
+      domain==='VISUAL'?'EXECUTE_VISUAL':workshop?'LOGIC_WORKSHOP':'PLACE_DWARF_LOGIC_TRAINEE',
     scope,inputRefs:inputRef?[inputRef]:[],
     expectedSourceSha:sourceSha,requestedAt:new Date().toISOString(),
     source:{stationId:'GO-BRAIN',system:'go-together'},

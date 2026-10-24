@@ -1,3 +1,5 @@
+import { putWorkshopContent, readWorkshopDelivery } from './logic-workshop.mjs';
+import { prepareWorkshopCommand } from './workshop-direct.mjs';
 import {L1_TASK_ID} from './l1-text-artifact.mjs';
 import {createL1Runtime,L1_INTENT,L1_RECEIPT_ID} from './l1-runtime.mjs';
 import { createR2RecordStore } from './r2-record-store.mjs';
@@ -157,6 +159,21 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
         }
       }
 
+      // Content-addressed nonsecret Workshop input, on the existing GO rail.
+      if(request.method==='POST' && url.pathname==='/station/go-workshop-content') {
+        if(!recordStore) return json({status:'UNKNOWN',reason:'DURABLE_STORAGE_NOT_CONFIGURED'},503);
+        const auth=await authenticateRailRequest(request,env);
+        if(!auth.ok) return json({status:'DENIED',reason:auth.reason},auth.status);
+        if(auth.principal!=='GO') return json({status:'DENIED',reason:'GO_RAIL_REQUIRED'},403);
+        try {
+          if(new TextEncoder().encode(auth.body).length>65536) throw Error('GO_WORKSHOP_CONTENT_TOO_LARGE');
+          const input=JSON.parse(auth.body);
+          if(!input||Object.keys(input).sort().join('|')!=='content|expectedSourceSha'||input.expectedSourceSha!==(env.SOURCE_SHA||env.COMMIT_SHA)) throw Error('GO_WORKSHOP_CONTENT_INVALID');
+          const result=await putWorkshopContent(recordStore,input.content);
+          return json({status:'WORKSHOP_CONTENT_STORED',...result,executed:false});
+        } catch(error) {return json({status:'DENIED',reason:error.code||error.message},400);}
+      }
+
       // GO directly requests a Factory-owned job. No external Work Pass.
       // HMAC authenticates the GO principal; Factory derives internal machine
       // identity, scopes and deduplication key from the opaque request ID.
@@ -182,10 +199,11 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
             throw Object.assign(new Error('GO_FACTORY_SOURCE_MISMATCH'),{code:'GO_FACTORY_SOURCE_MISMATCH'});
           validateGoJobSpec(input.domain,input.spec);
           const checkpointId='CP-'+jobId;
-          const inputRef=await prepareGoJobInput(env.RECORD_STORE,{
+          const workshop=input.domain==='LOGIC'&&Boolean(input.spec.workshop);
+          const inputRef=workshop ? await prepareWorkshopCommand(recordStore,{jobId,command:input.spec.workshop}) : await prepareGoJobInput(env.RECORD_STORE,{
             domain:input.domain,jobId,checkpointId,spec:input.spec
           });
-          const handoff=createInternalGoHandoff({jobId,domain:input.domain,inputRef,sourceSha:current});
+          const handoff=createInternalGoHandoff({jobId,domain:input.domain,inputRef,sourceSha:current,workshop});
           const done=await runtime.receive(handoff);
           const receiptId=done.receipt?.receiptId || null;
           const back=done.readback;
@@ -249,7 +267,7 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
           const id=args.receiptId,ref=args.artifactRef;
           if(typeof id!=='string'||!/^receipt-[A-Za-z0-9-]{8,80}$/.test(id) ||
             typeof ref!=='string' || ref.length>900 ||
-            !ref.startsWith('r2://factory/edge-results/'))
+            !(ref.startsWith('r2://factory/edge-results/')||/^r2:\/\/factory\/records\/logic\/workshop\/v1\/content\/[a-f0-9]{64}$/.test(ref)))
             throw Error('INVALID_ARTIFACT_REQUEST');
           const filename=ref.slice('r2://factory/'.length);
           if(filename.split('/').some(part=>!part||part==='.'||part==='..'||part.includes('\\')))
@@ -261,6 +279,14 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
             back.authorizationSource!=='WORK_PASS' || back.domainVerified!==true ||
             !Array.isArray(back.result?.artifactRefs) || !back.result.artifactRefs.includes(ref))
             return json({status:'DENIED',reason:'ARTIFACT_NOT_IN_GO_RECEIPT'},403);
+          if(ref.startsWith('r2://factory/records/logic/workshop/v1/content/')) {
+            const delivery=await readWorkshopDelivery(recordStore,id);
+            if(delivery.artifactRef!==ref) throw Error('WORKSHOP_ARTIFACT_MISMATCH');
+            const bytes=new TextEncoder().encode(JSON.stringify(delivery));
+            if(bytes.length>524288) return json({status:'UNKNOWN',reason:'ARTIFACT_EXCEEDS_MCP_LIMIT'},413);
+            const digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(v=>v.toString(16).padStart(2,'0')).join('');
+            return new Response(bytes,{headers:{'content-type':'application/json','cache-control':'no-store','x-factory-artifact-sha256':digest,'x-factory-receipt-id':id,'x-factory-source-sha':back.sourceSha,'x-content-type-options':'nosniff'}});
+          }
           const file=await env.RECORD_STORE.get(filename);
           if(!file)return json({status:'UNKNOWN',reason:'ARTIFACT_NOT_FOUND'},404);
           if(file.size>524288)return json({status:'UNKNOWN',reason:'ARTIFACT_EXCEEDS_MCP_LIMIT'},413);

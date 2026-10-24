@@ -1,6 +1,9 @@
+import { createBoundedWorkshopProvider } from './bounded-workshop-provider.mjs';
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { createEdgeCodeProvider, createEdgeVisualProvider } from './edge-providers.mjs';
 export class CodeProvider extends WorkerEntrypoint {
+  workshopAuthorize(input) { return createBoundedWorkshopProvider(this.env).authorize(input); }
+  workshopRunCase(input) { return createBoundedWorkshopProvider(this.env).runCase(input); }
   inspectRepository(input) { return createEdgeCodeProvider(this.env).inspectRepository(input); }
   planChange(input) { return createEdgeCodeProvider(this.env).planChange(input); }
   executeChange(input) { return createEdgeCodeProvider(this.env).executeChange(input); }
