@@ -33,6 +33,8 @@ test('generic LOGIC delegates the exact work to its runner without placing DWARF
   const output = { marker: 'separate-runner-result' };
   let seen;
   const route = createLogicDispatcher({ store, runner: async value => { seen = value; return output; } });
+  assert.deepEqual(route.readiness.genericRunner, { status: 'READY', reason: null });
+  assert.equal(route.readiness.reason, null);
   assert.equal(await route(input), output);
   assert.equal(seen, input);
   assert.equal(await store.get(key), null);

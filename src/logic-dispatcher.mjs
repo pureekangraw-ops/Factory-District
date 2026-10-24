@@ -5,7 +5,7 @@ import { createDwarfLogicTraineeRunner } from './dwarf-logic-trainee.mjs';
 export function createLogicDispatcher({ store, runner } = {}) {
   if (runner !== undefined && typeof runner !== 'function') throw new TypeError('logicRunner_INVALID');
   const dwarf = createDwarfLogicTraineeRunner({ store });
-  return async function dispatchLogic(input = {}) {
+  const dispatchLogic = async function dispatchLogic(input = {}) {
     const work = input.work;
     if (work?.ownerDomain === 'LOGIC') {
       if (work.intent === 'PLACE_DWARF_LOGIC_TRAINEE'
@@ -20,4 +20,17 @@ export function createLogicDispatcher({ store, runner } = {}) {
         verificationRef: null, returnRef: null, evidenceRefs: [] },
     };
   };
+  // Aggregate READY is retained for existing GO placement consumers. Describe
+  // its scope explicitly: legacy capability registration is not runner readiness.
+  dispatchLogic.readiness = Object.freeze({
+    status: 'READY',
+    reason: runner ? null : 'LOGIC_LEGACY_CAPABILITIES_ONLY',
+    genericRunner: Object.freeze({ status: runner ? 'READY' : 'UNKNOWN',
+      reason: runner ? null : 'LOGIC_RUNNER_NOT_CONFIGURED' }),
+    capabilities: Object.freeze({
+      PLACE_DWARF_LOGIC_TRAINEE: Object.freeze({ status: 'READY', reason: null }),
+      IMPORT_GOLDEN_CASES: Object.freeze({ status: 'READY', reason: null }),
+    }),
+  });
+  return Object.freeze(dispatchLogic);
 }

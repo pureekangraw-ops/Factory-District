@@ -58,6 +58,15 @@ GO direct still accepts only its existing LOGIC placement spec; PANTHEON scope
 validation is unchanged. Existing health READY remains registration information,
 not evidence of generic reasoning/training capability.
 
+Readiness review correction: the dispatcher's aggregate LOGIC status stays READY
+for existing GO placement consumers, with reason `LOGIC_LEGACY_CAPABILITIES_ONLY`
+when no generic runner exists. Health separately exposes
+`genericRunner: {status: UNKNOWN, reason: LOGIC_RUNNER_NOT_CONFIGURED}` and explicit
+READY capability entries for placement/import. A configured generic runner has
+its own READY registration status; that still does not prove execution success.
+Worker regressions verify health makes no writes, absent generic execution fails,
+and explicit placement with receipt readback succeeds.
+
 ## Validation
 
 All execution was local with synthetic fixtures and in-memory storage.
@@ -73,6 +82,10 @@ All execution was local with synthetic fixtures and in-memory storage.
 - `node scripts/go-auth-probe-interop.mjs /workspace/go-factory-room2/worker/factory-direct.mjs`:
   PASS, offline paired protocol probe with zero writes/executions. GO module
   compared equal to current main `3dfd2d59` before running.
+- `node scripts/go-logic-readiness-interop.mjs /workspace/go-factory-room2/worker/factory-direct.mjs`:
+  PASS, current GO consumer accepts the scoped readiness and completes synthetic
+  placement with a verified receipt against the default Worker and in-memory
+  bucket. No remote calls or real jobs.
 - First full-suite run found four expected old diagnostic assertions. Updated
   those assertions to the new entrypoint diagnostic; all other assertions were
   preserved and the full suite passed on rerun.

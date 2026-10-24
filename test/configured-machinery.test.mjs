@@ -43,6 +43,16 @@ async function dispatch(app, input) {
 }
 test('default LOGIC dispatch does not substitute DWARF placement for generic execution', async () => {
   const a = app('LOGIC', undefined);
+  const health = await (await a.fetch(new Request('https://local.invalid/health'))).json();
+  assert.deepEqual(health.machinery.LOGIC, {
+    status: 'READY', reason: 'LOGIC_LEGACY_CAPABILITIES_ONLY',
+    genericRunner: { status: 'UNKNOWN', reason: 'LOGIC_RUNNER_NOT_CONFIGURED' },
+    capabilities: {
+      PLACE_DWARF_LOGIC_TRAINEE: { status: 'READY', reason: null },
+      IMPORT_GOLDEN_CASES: { status: 'READY', reason: null },
+    },
+  });
+  assert.equal(a.env.RECORD_STORE.records.size, 0, 'health must not write records');
   const result = await dispatch(a, handoff('LOGIC'));
   assert.equal(result.status, 409);
   assert.equal(result.body.readback.domainVerified, false);
@@ -52,6 +62,9 @@ test('default LOGIC dispatch does not substitute DWARF placement for generic exe
 
 test('default LOGIC dispatch preserves explicit legacy placement and exact receipt readback', async () => {
   const a = app('LOGIC', undefined);
+  const health = await (await a.fetch(new Request('https://local.invalid/health'))).json();
+  assert.equal(health.machinery.LOGIC.genericRunner.status, 'UNKNOWN');
+  assert.equal(health.machinery.LOGIC.capabilities.PLACE_DWARF_LOGIC_TRAINEE.status, 'READY');
   const input = { ...handoff('LOGIC'), intent: 'PLACE_DWARF_LOGIC_TRAINEE' };
   const first = await dispatch(a, input);
   assert.equal(first.status, 202);

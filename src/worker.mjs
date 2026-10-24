@@ -57,7 +57,8 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
           ? {
               ...runtime.health(),
               transport,
-              machinery: Object.fromEntries(['CODE', 'VISUAL', 'LOGIC'].map(domain => [domain, {
+              machinery: Object.fromEntries(['CODE', 'VISUAL', 'LOGIC'].map(domain => [domain,
+                domain === 'LOGIC' && domainRunners.LOGIC?.readiness ? domainRunners.LOGIC.readiness : {
                 status: typeof domainRunners[domain] === 'function' ? 'READY' : 'UNKNOWN',
                 reason: typeof domainRunners[domain] === 'function' ? null : 'MACHINE_NOT_REGISTERED',
               }])),
