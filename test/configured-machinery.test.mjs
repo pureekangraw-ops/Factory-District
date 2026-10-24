@@ -41,6 +41,28 @@ async function dispatch(app, input) {
     method: 'POST', secret: SECRET, body: JSON.stringify(input) }));
   return { status: r.status, body: await r.json() };
 }
+test('default LOGIC dispatch does not substitute DWARF placement for generic execution', async () => {
+  const a = app('LOGIC', undefined);
+  const result = await dispatch(a, handoff('LOGIC'));
+  assert.equal(result.status, 409);
+  assert.equal(result.body.readback.domainVerified, false);
+  assert.equal(result.body.receipt.reason, 'LOGIC_RUNNER_NOT_CONFIGURED');
+  assert.equal([...a.env.RECORD_STORE.records.keys()].some(key => key.includes('logic/trainees/')), false);
+});
+
+test('default LOGIC dispatch preserves explicit legacy placement and exact receipt readback', async () => {
+  const a = app('LOGIC', undefined);
+  const input = { ...handoff('LOGIC'), intent: 'PLACE_DWARF_LOGIC_TRAINEE' };
+  const first = await dispatch(a, input);
+  assert.equal(first.status, 202);
+  assert.equal(first.body.readback.domainVerified, true);
+  assert.equal(first.body.readback.machineResult.trainee.placement.productionAuthority, false);
+  const repeat = await dispatch(a, input);
+  assert.equal(repeat.body.receipt.receiptId, first.body.receipt.receiptId);
+  const readback = await a.fetch(await railRequest(`https://local.invalid/station/readback/${first.body.receipt.receiptId}`, { secret: SECRET }));
+  assert.deepEqual(await readback.json(), first.body.readback);
+});
+
 for (const domain of ['CODE','VISUAL']) {
   test(`${domain}: configured existing pipeline persists machine state and correlated receipt without replay`, async () => {
     const p = provider(domain), a = app(domain,p), input = handoff(domain, [`EXECUTE:${domain}`, ...(domain === 'CODE' ? ['DEPLOY:CODE'] : [])]);
