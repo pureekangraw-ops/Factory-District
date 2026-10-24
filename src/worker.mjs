@@ -4,7 +4,7 @@ import { createR2RecordStore } from './r2-record-store.mjs';
 import { createFactoryRuntime } from './factory-runtime.mjs';
 import { createPixieOperator } from './pixie-autonomous.mjs';
 import { BUILD_SOURCE_SHA } from './build-source-identity.mjs';
-import { authenticateRailRequest, railTransportHealth, validatePantheonHandoff } from './rail-auth.mjs';
+import { authenticateRailRequest, railTransportHealth, validatePantheonHandoff, GO_AUTH_PROBE_PURPOSE, signGoAuthProbe } from './rail-auth.mjs';
 import { createConfiguredMachinery } from './configured-machinery.mjs';
 import { createDwarfLogicTraineeRunner } from './dwarf-logic-trainee.mjs';
 import { prepareGoJobInput, validateGoJobSpec } from './go-direct-input.mjs';
@@ -68,6 +68,36 @@ export function createFactoryWorker(env = {}, { recordStore, domainRunners = {} 
               storage: { status: 'UNKNOWN', reason: 'DURABLE_STORAGE_NOT_CONFIGURED' },
               transport,
             });
+      }
+
+      // Read-only mutual-key challenge. The existing HMAC rail authenticates
+      // GO before returning a domain-separated signed nonce. Never creates a
+      // Job, Work Pass, receipt, R2 record or any machine effect.
+      if (request.method === 'POST' && url.pathname === '/station/go-auth-probe') {
+        const authenticated = await authenticateRailRequest(request, env);
+        if (!authenticated.ok)
+          return json({status:'DENIED', reason:authenticated.reason}, authenticated.status);
+        if (authenticated.principal !== 'GO')
+          return json({status:'DENIED', reason:'GO_RAIL_REQUIRED'}, 403);
+        if (!runtime)
+          return json({status:'UNKNOWN',reason:'DURABLE_STORAGE_NOT_CONFIGURED'},503);
+        try {
+          if (new TextEncoder().encode(authenticated.body).byteLength > 256)
+            throw Error('AUTH_PROBE_INVALID');
+          const input = JSON.parse(authenticated.body);
+          if (!input || typeof input !== 'object' || Array.isArray(input) ||
+              Object.keys(input).sort().join('|') !== 'nonce|purpose' ||
+              input.purpose !== GO_AUTH_PROBE_PURPOSE ||
+              typeof input.nonce !== 'string' || !/^[a-f0-9]{32}$/.test(input.nonce))
+            throw Error('AUTH_PROBE_INVALID');
+          const sourceSha = runtime.health().sourceSha;
+          const proof = await signGoAuthProbe(env.GO_FACTORY_RAIL_SECRET, input.nonce, sourceSha);
+          return json({status:'AUTHENTICATED', service:'factory-district',
+            stationId:'FACTORY-STATION',sourceSha,nonce:input.nonce,proof,
+            readOnly:true,executed:false});
+        } catch {
+          return json({status:'DENIED',reason:'AUTH_PROBE_INVALID'},400);
+        }
       }
 
       // Same HMAC rail, same Work Pass contract, no additional auth door.
