@@ -65,9 +65,10 @@ export function createConfiguredMachinery(env, recordStore) {
         kernel, adapter, work: machineWork(work,domain), actorRef });
     };
   }
-  if (recordStore && typeof env.LOGIC_WORKSHOP_PROVIDER?.authorize === 'function'
-    && typeof env.LOGIC_WORKSHOP_PROVIDER?.runCase === 'function') {
-    runners.LOGIC = createWorkshopRunner({ store: recordStore, provider: env.LOGIC_WORKSHOP_PROVIDER });
+  const workshopProvider=env.LOGIC_WORKSHOP_PROVIDER || (typeof env.CODE_PROVIDER?.workshopAuthorize==='function' && typeof env.CODE_PROVIDER?.workshopRunCase==='function' ? {authorize:input=>env.CODE_PROVIDER.workshopAuthorize(input),runCase:input=>env.CODE_PROVIDER.workshopRunCase(input)} : null);
+  if (recordStore && typeof workshopProvider?.authorize === 'function'
+    && typeof workshopProvider?.runCase === 'function') {
+    runners.LOGIC = createWorkshopRunner({ store: recordStore, provider: workshopProvider });
   }
   return Object.freeze(runners);
 }
