@@ -11,14 +11,19 @@ const RANDOM_KEY='GO$k2.!q_10yz/Wyq3+S1r0akB2F^mln7QrXxB9F#pR';
 const PREFIX='https://factory.test';
 
 function fixture(secret=RANDOM_KEY) {
-  let executions=0;
+  let executions=0,writes=0;
   const env={GO_FACTORY_RAIL_SECRET:secret,SOURCE_SHA:SHA,
     METROPOLIS_FACTORY_RAIL_SECRET:'metropolis-existing',
     PANTHEON_FACTORY_RAIL_SECRET:'pantheon-existing'};
-  const recordStore=createDurableStore({driver:createInMemoryDurableDriver()});
+  const driver=createInMemoryDurableDriver();
+  for(const method of ['put','append']) {
+    const original=driver[method];
+    driver[method]=async(...args)=>{writes++;return original(...args);};
+  }
+  const recordStore=createDurableStore({driver});
   const app=createFactoryWorker(env,{recordStore,
     domainRunners:{CODE:async()=>{executions++;throw Error('machine_called');}}});
-  return {app,get executions(){return executions;}};
+  return {app,get executions(){return executions;},get writes(){return writes;}};
 }
 async function sign(path,{key=RANDOM_KEY,client='GO',purpose=GO_AUTH_PROBE_PURPOSE,
   nonce=NONCE}={}) {
@@ -57,6 +62,7 @@ test('Factory authenticates GET-free signed nonce probe without mutating Factory
   assert.equal(data.readOnly,true);
   assert.equal(data.executed,false);
   assert.equal(f.executions,0);
+  assert.equal(f.writes,0);
   const hmac=await crypto.subtle.importKey('raw',new TextEncoder().encode(RANDOM_KEY),
     {name:'HMAC',hash:'SHA-256'},false,['verify']);
   const message=GO_AUTH_PROBE_PURPOSE+'\n'+NONCE+'\n'+SHA+'\nFACTORY-STATION';
@@ -81,4 +87,20 @@ test('Factory probe rejects mismatched HMAC, foreign principal, placeholder and 
   assert.equal(noKey.status,503);
   assert.equal((await noKey.json()).reason,'GO_FACTORY_RAIL_KEY_NOT_CONFIGURED');
   assert.equal(f.executions,0);
+  assert.equal(f.writes,0);
+});
+
+// Validate the request boundary, not only the standalone format helper:
+// the historical text() normalization incorrectly accepted these keys.
+test('GO request authentication never trims configured secret bytes',async()=>{
+  for(const secret of [' '+RANDOM_KEY,RANDOM_KEY+' ',RANDOM_KEY+'\n']) {
+    const f=fixture(secret);
+    for(const key of [RANDOM_KEY,secret]) {
+      const response=await f.app.fetch(await sign('/station/go-auth-probe',{key}));
+      assert.equal(response.status,503);
+      assert.equal((await response.json()).reason,'GO_FACTORY_RAIL_KEY_NOT_CONFIGURED');
+    }
+    assert.equal(f.executions,0);
+    assert.equal(f.writes,0);
+  }
 });

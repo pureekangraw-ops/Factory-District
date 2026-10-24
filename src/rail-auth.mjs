@@ -72,9 +72,12 @@ export async function authenticateRailRequest(request, env = {}, {
   // Independent PANTHEON credential; never share or rotate the City rail key.
   const client = request.headers.get('x-factory-client');
   const principal = client === 'PANTHEON' ? 'PANTHEON' : client === 'GO' ? 'GO' : 'CITY';
-  const secret = text(principal === 'PANTHEON' ? env.PANTHEON_FACTORY_RAIL_SECRET
-    : principal === 'GO' ? env.GO_FACTORY_RAIL_SECRET : env.METROPOLIS_FACTORY_RAIL_SECRET);
-  // GO requires its own 256-bit key; inert placeholders must not authorize calls.
+  // Preserve GO key bytes exactly, matching the GO sender and probe signer.
+  // Keep existing normalization for the independent legacy rails.
+  const secret = principal === 'GO' ? env.GO_FACTORY_RAIL_SECRET
+    : text(principal === 'PANTHEON' ? env.PANTHEON_FACTORY_RAIL_SECRET
+      : env.METROPOLIS_FACTORY_RAIL_SECRET);
+  // GO requires its own configured key; inert placeholders must not authorize calls.
   if (principal === 'GO' && !goRailSecretConfigured(secret))
     return { ok: false, status: 503, reason: 'GO_FACTORY_RAIL_KEY_NOT_CONFIGURED' };
   if (!secret) return { ok: false, status: 503, reason: 'FACTORY_RAIL_SECRET_NOT_CONFIGURED' };
