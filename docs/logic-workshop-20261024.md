@@ -1,103 +1,146 @@
-# LOGIC Workshop implementation checkpoint
+# LOGIC Semi-Manual Workshop v0.1
 
-Status: partial implementation; draft only. No merge, deployment or live jobs.
+Implementation for Draft PR #45; no merge/deployment or production acceptance.
 
-## Source and Blueprint recovery
+## Canonical specification
 
-Factory base: `2a12d793d8c0546dcea9d54d1a8dfcc3f4677b38`.
-GO remote main: `3dfd2d59f54d333e1236bd7c056efe4b213b44eb`.
-The owner request of 2026-10-24 calls for a separate LOGIC Workshop supporting
-Agent and Runner, persistent Baseline/Version/Test Results and existing Machine
-Foundation integration, while preserving DWARF placement.
+- [GO Blueprint v0.1, Slack, 2026-10-24](https://yggmetro.slack.com/archives/C0CBTKBEJ4R/p1792818467150009)
+- [GO implementation handoff, comment 6380200244](https://github.com/pureekangraw-ops/Factory-District/pull/45#issuecomment-6380200244)
 
-Recovered sources:
+These sources agree. Slack is the detailed canonical working design; the GitHub
+comment summarizes it and confirms AGENT/RUNNER are subject kinds, not replacement
+target enums. This is a newly issued design, superseding the earlier missing
+Blueprint checkpoint. No material conflict remains.
 
-| Source | Established contract | Missing Workshop decision |
-| --- | --- | --- |
-| GO Brain PLAN `8190e902-e625-44a9-b16f-10162eda0dd5` | Supported capability, real execution, artifact, durable receipt and exact readback are separate facts | No Agent/Runner or Baseline schema |
-| GO Brain architecture `aedaeca2-3251-4677-ba00-300da0897f57` | Work identity and owner authority; tool completion differs from validated completion | No Workshop contract |
-| `src/logic-contract.mjs`, `logic-adapters.mjs`, `logic-machine.mjs` | EXPERIMENT, AGENT_EVALUATION, SIMULATION; design/build/development/simulation/golden/evaluation/RCA/qualification/version lifecycle | No RUNNER target or Agent-versus-Runner semantics |
-| `src/logic-registry.mjs` | Registration with version/manifest; health and field-result history | No Baseline, per-version lineage or test-result storage contract |
-| `src/machine-contract.mjs`, `machine-kernel.mjs`, `durable-machine-persistence.mjs` | Machine run/attempt/evidence/verification/return persistence; independent subject assessment and ingress checkpoint | These are reusable infrastructure, not definitions of Workshop subjects |
-| `src/dwarf-logic-trainee.mjs` | Explicit placement, unchanged trainee key, pending qualification and false authority flags; legacy golden-case import | Placement does not execute reasoning or training |
+## Implementation and semantics
 
-GO Brain lexical searches for Blueprint, LOGIC Workshop, Machine Foundation,
-Baseline and Runner, repository documentation scans, and GitHub Blueprint search
-in Factory-District and Go-Together did not locate the canonical Workshop design.
-Historical unmerged DWARF branches are not treated as the current Blueprint.
+`logic-workshop.mjs` implements REGISTER_SUBJECT, CAPTURE_BASELINE,
+CREATE_CANDIDATE, RUN_TEST_SUITE, COMPARE_BASELINE, RECORD_RCA, OWNER_QUALIFY and
+EXPORT_PACKAGE. AGENT and RUNNER share the same operations and storage model.
+AGENT manifests carry role/prompt, capability and policy/authority refs. RUNNER
+manifests carry workflow, step/tool and execution-policy refs. Existing
+EXPERIMENT/AGENT_EVALUATION/SIMULATION target enums remain unchanged.
 
-The material blocker is the missing canonical Blueprint record/file and revision.
-It must establish the Agent/Runner input/output/provider contracts, what is frozen
-as a Baseline, how candidate/version identities relate to it, and which test
-results belong to each version (including failed runs). These decisions affect
-durable schemas and execution effects; this PR deliberately does not invent them.
+`logic-workshop-runner.mjs` adapts each manual operation to the existing Logic
+Machine method lifecycle and durable Machine Kernel. Its lifecycle bookkeeping
+is not evidence of simulation, training or qualification: operation details and
+actual case results are stored separately. A test operation can COMPLETE while
+its tests FAIL; this means the requested test suite was executed and recorded,
+not that the subject passed. Machine subject assessment stays NOT_ASSESSED.
 
-## Implemented and supported
+The entrypoint uses the existing dispatcher and `createConfiguredMachinery`.
+Registration requires an injected deployment-owned `LOGIC_WORKSHOP_PROVIDER`
+with `authorize` and `runCase` methods. No provider or binding is created by this
+PR. An absent provider retains UNKNOWN generic readiness and the explicit
+legacy-only readiness reason from the reviewed correction.
 
-`createLogicDispatcher` separates explicit legacy DWARF intents from the default
-LOGIC executor. The production entrypoint now composes that dispatcher around
-the existing machinery configuration instead of overwriting LOGIC with DWARF.
-An injected LOGIC runner receives the exact original input and returns its result
-unchanged. Runner exceptions never fall back to placement.
+### Persistence
 
-Explicit `PLACE_DWARF_LOGIC_TRAINEE` and legacy `IMPORT_GOLDEN_CASES` retain their
-implementation, records, idempotency and receipt semantics. Generic LOGIC with
-no configured runner returns UNKNOWN / `LOGIC_RUNNER_NOT_CONFIGURED`, with no
-verification or placement evidence. Wrong-domain input invokes neither runner.
+All new keys use `logic/workshop/v1/`, separate from DWARF and old Registry keys.
+JSON content is canonicalized (sorted object keys), SHA-256 addressed and checked
+on every read. Content is limited to 256 KiB per item. Explicit inline credential
+fields are rejected; provisioning must supply nonsecret content only. This check
+is not a general-purpose secret scanner.
 
-Why this change: DWARF was installed as the default LOGIC executor in the Worker
-entrypoint. An explicit dispatcher is the smallest change that separates that
-capability while preserving existing rails and providing a place for the actual
-Workshop runner once its contract is recovered. No new backend, route, permission
-gate, provider binding or authentication behavior is introduced.
+Each subject uses a conditional-write aggregate containing immutable baseline,
+candidate definitions, completed test runs, comparisons, RCA records, decisions,
+packages and operation results. Aggregate CAS gives cross-entity consistency
+without a second backend. Configs/digests/parents are never overwritten. Candidate
+DRAFT status is its creation state; `snapshot().versionStates` derives current
+DRAFT/TESTED/QUALIFIED/REJECTED from retained tests and explicit decisions. Packages
+include the derived lifecycle. A later rejection prevents export against an old
+approval. This separates immutable candidate identity from lifecycle decisions.
 
-Compatibility: unsupported LOGIC diagnostic changes from
-`DWARF_LOGIC_INTENT_NOT_SUPPORTED` to `LOGIC_RUNNER_NOT_CONFIGURED` at the default
-Worker entrypoint. Direct users of the DWARF runner retain its old diagnostic.
-GO direct still accepts only its existing LOGIC placement spec; PANTHEON scope
-validation is unchanged. Existing health READY remains registration information,
-not evidence of generic reasoning/training capability.
+An initial baseline uses `initialImportedConfig: true` and `sourceVersionId:null`;
+a later baseline may reference an existing source version with matching config.
+A baseline TestRun uses `versionId:null`, explicitly representing the frozen
+baseline config rather than inventing a candidate version. It must use that
+baseline's suite and environment. Candidate tests reference an existing candidate
+and its baseline. Test suite/environment changes are allowed for experiments,
+but comparison returns NOT_COMPARABLE, null deltas/regressions, and cannot qualify.
 
-Readiness review correction: the dispatcher's aggregate LOGIC status stays READY
-for existing GO placement consumers, with reason `LOGIC_LEGACY_CAPABILITIES_ONLY`
-when no generic runner exists. Health separately exposes
-`genericRunner: {status: UNKNOWN, reason: LOGIC_RUNNER_NOT_CONFIGURED}` and explicit
-READY capability entries for placement/import. A configured generic runner has
-its own READY registration status; that still does not prove execution success.
-Worker regressions verify health makes no writes, absent generic execution fails,
-and explicit placement with receipt readback succeeds.
+Comparisons currently pair one baseline run and one candidate run; the stored
+reference fields are arrays for compatibility. RCA requires existing non-PASS
+results for its exact version. Adjustment is a separate CREATE_CANDIDATE with a
+new ID, the failed parent and RCA ID. Retest is RUN_TEST_SUITE with a fresh run ID;
+no self-editing or automatic RCA execution occurs.
 
-## Validation
+Operation IDs are bound to command digest, Work ID, checkpoint and actor.
+Identical replay returns the same result; changed replay conflicts. A persisted
+pending claim prevents re-execution after an uncertain result. Test identity and
+UNKNOWN status are persisted before case execution; completion replaces that
+reservation once, retaining PASS/FAIL/ERROR results and evidence. Completed IDs
+cannot be reused. Uncertain claims need evidence-based reconciliation; there is
+no automatic unlock/retry. A subject with an uncertain effect remains blocked
+rather than risking duplicate execution.
 
-All execution was local with synthetic fixtures and in-memory storage.
+### Bounded execution and authorization
 
-- `npm run check`: PASS.
-- `npm test`: PASS, 276 tests, zero failures.
-- Six new dispatcher regressions cover placement persistence/idempotency,
-  separate runner dispatch, missing runner, wrong domain, legacy import and
-  exception without fallback.
-- Two new signed Worker integration regressions cover generic LOGIC rejection
-  and legacy placement with duplicate receipt identity and exact readback.
-- Existing full-suite CODE/VISUAL, GO direct and PANTHEON tests pass.
-- `node scripts/go-auth-probe-interop.mjs /workspace/go-factory-room2/worker/factory-direct.mjs`:
-  PASS, offline paired protocol probe with zero writes/executions. GO module
-  compared equal to current main `3dfd2d59` before running.
-- `node scripts/go-logic-readiness-interop.mjs /workspace/go-factory-room2/worker/factory-direct.mjs`:
-  PASS, current GO consumer accepts the scoped readiness and completes synthetic
-  placement with a verified receipt against the default Worker and in-memory
-  bucket. No remote calls or real jobs.
-- First full-suite run found four expected old diagnostic assertions. Updated
-  those assertions to the new entrypoint diagnostic; all other assertions were
-  preserved and the full suite passed on rerun.
+Existing signed station transport and Work Pass validation remain intact. The
+Workshop runner requires `intent: LOGIC_WORKSHOP`, `EXECUTE:LOGIC` and exactly one
+content-addressed command ref in `inputRefs`. The trusted provider must explicitly
+authorize the command with matching subjectId, operation, operationId, actor and
+ownerSystem. Test execution additionally requires `testInputsApproved:true`.
+Qualification requires an ownerDecisionRef and an explicit qualificationApproved
+boolean matching QUALIFIED/REJECTED; caller-supplied approval fields confer no
+permission. QUALIFIED also requires comparable, passing candidate tests without
+regressions. No production authority is granted.
 
-## Remaining work and boundaries
+Suites contain 1–64 unique case IDs and content-addressed input/expected refs.
+Factory resolves those approved inputs and calls the configured `runCase` method;
+it compares actual JSON to expected JSON independently, stores actual/expected
+proofs and sanitizes provider exceptions into ERROR evidence. There is no eval,
+model training, arbitrary URL fetch, fallback executor or paid service in this
+implementation. Provider-side timeout, cancellation, isolation and cost policies
+must be supplied and reviewed before any real provider is enabled; this PR's
+synthetic provider proves the Workshop contract, not a sandbox for untrusted code.
 
-Agent/Runner Workshop operations, Baseline/Version/Test Results persistence and
-their Machine Foundation integration are pending the canonical contract. They
-are **not implemented or proven by this partial PR**. No new GO adapter is
-required for the routing separation; any later Workshop adapter must follow the
-recovered contract. No GO/Observatory files were edited.
+### Package and receipt delivery
 
-No live jobs, training, customer data, model/provider calls, production writes,
-credential changes, merge or deployment were performed. Prior CODE/VISUAL live
-proofs remain historical, unchanged, and were not rerun for this work.
+EXPORT_PACKAGE requires the latest explicit QUALIFIED decision for its version.
+Its content-addressed JSON contains subject/manifest/config, candidate, baseline,
+comparative tests/evidence, decision and Work/checkpoint binding. It never publishes
+production. The normal Factory receipt references that artifact. Internal helper
+`readWorkshopDelivery(store, receiptId)` verifies the stored receipt/readback,
+artifact membership, digest and scope and returns the package plus exact Factory
+receipt/readback. This avoids a circular hash from embedding a receipt in the
+artifact it signs. It is not a public unauthenticated endpoint; callers retain
+existing receipt authorization.
+
+## Compatibility and unsupported integrations
+
+DWARF placement/import intents, keys and receipts remain unchanged. Generic LOGIC
+never falls back to DWARF. Health separately describes generic runner and legacy
+capabilities while preserving aggregate READY for existing placement consumers.
+CODE/VISUAL, HMAC, WorkID/checkpoint claims, receipt replay and GO/PANTHEON protocols
+are unchanged. No GO or Observatory files were modified.
+
+GO Direct still validates only DWARF placement. No generic GO Workshop API,
+PANTHEON scope widening, production provider, model invocation, live training,
+automatic publishing, merge/deploy or credential/configuration change is included.
+The content/command ingestion helpers are internal APIs for the existing trusted
+integration; no new public upload surface is introduced. Large/binary artifacts
+and multi-run statistical comparison are outside this v0.1 implementation.
+
+## Validation evidence
+
+Local synthetic tests run both AGENT and RUNNER through signed Worker requests,
+Machine Kernel, durable in-memory R2, receipt replay and exact readback. They cover
+failed evidence, RCA-linked new candidate, qualification denial/approval, package
+hash/readback, suite/environment mismatch, rejection, immutable IDs/digests,
+wrong authority/scope, changed Work replay, corrupt content, empty suite, concurrent
+claims and uncertain final persistence without replay. Old regression tests cover
+DWARF, CODE/VISUAL, GO direct and PANTHEON.
+
+Reproduce locally:
+
+```sh
+npm run check
+npm test
+node scripts/go-auth-probe-interop.mjs /path/to/Go-Together/worker/factory-direct.mjs
+node scripts/go-logic-readiness-interop.mjs /path/to/Go-Together/worker/factory-direct.mjs
+```
+
+The GO module is verified against main `3dfd2d59f54d333e1236bd7c056efe4b213b44eb`.
+Exact final test counts, commit and CI runs are reported in the PR handoff. These
+are engineering/local integration results, not live B2E acceptance.

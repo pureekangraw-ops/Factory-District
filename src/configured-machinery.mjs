@@ -1,3 +1,4 @@
+import { createWorkshopRunner } from './logic-workshop-runner.mjs';
 import { CODE_ADAPTER_METHODS } from './code-contract.mjs';
 import { VISUAL_ADAPTER_METHODS } from './visual-contract.mjs';
 import { createMachineKernel } from './machine-kernel.mjs';
@@ -63,6 +64,10 @@ export function createConfiguredMachinery(env, recordStore) {
       return (domain === 'CODE' ? runCodeMachine : runVisualMachine)({
         kernel, adapter, work: machineWork(work,domain), actorRef });
     };
+  }
+  if (recordStore && typeof env.LOGIC_WORKSHOP_PROVIDER?.authorize === 'function'
+    && typeof env.LOGIC_WORKSHOP_PROVIDER?.runCase === 'function') {
+    runners.LOGIC = createWorkshopRunner({ store: recordStore, provider: env.LOGIC_WORKSHOP_PROVIDER });
   }
   return Object.freeze(runners);
 }
